@@ -1,0 +1,129 @@
+ImpedanceControlConfiguration:
+  imp_c:
+    value00: 0
+    value01: 0
+    value02: 0
+    value03: 0
+    value04: 0
+    value05: 0
+
+    value10: 0
+    value11: 0
+    value12: 0
+    value13: 0
+    value14: 0
+    value15: 0
+
+    value20: 0
+    value21: 0
+    value22: 0
+    value23: 0
+    value24: 0
+    value25: 0
+
+    value30: 0
+    value31: 0
+    value32: 0
+    value33: 0
+    value34: 0
+    value35: 0
+
+    value40: 0
+    value41: 0
+    value42: 0
+    value43: 0
+    value44: 0
+    value45: 0
+
+    value50: 0
+    value51: 0
+    value52: 0
+    value53: 0
+    value54: 0
+    value55: 0
+
+  imp_k:
+    value00: 0
+    value01: 0
+    value02: 0
+    value03: 0
+    value04: 0
+    value05: 0
+
+    value10: 0
+    value11: 0
+    value12: 0
+    value13: 0
+    value14: 0
+    value15: 0
+
+    value20: 0
+    value21: 0
+    value22: 0
+    value23: 0
+    value24: 0
+    value25: 0
+
+    value30: 0
+    value31: 0
+    value32: 0
+    value33: 0
+    value34: 0
+    value35: 0
+
+    value40: 0
+    value41: 0
+    value42: 0
+    value43: 0
+    value44: 0
+    value45: 0
+
+    value50: 0
+    value51: 0
+    value52: 0
+    value53: 0
+    value54: 0
+    value55: 0
+
+  imp_I:
+    value00: 0
+    value01: 0
+    value02: 0
+    value03: 0
+    value04: 0
+    value05: 0
+
+    value10: 0
+    value11: 0
+    value12: 0
+    value13: 0
+    value14: 0
+    value15: 0
+
+    value20: 0
+    value21: 0
+    value22: 0
+    value23: 0
+    value24: 0
+    value25: 0
+
+    value30: 0
+    value31: 0
+    value32: 0
+    value33: 0
+    value34: 0
+    value35: 0
+
+    value40: 0
+    value41: 0
+    value42: 0
+    value43: 0
+    value44: 0
+    value45: 0
+
+    value50: 0
+    value51: 0
+    value52: 0
+    value53: 0
+    value54: 0
+    value55: 0
