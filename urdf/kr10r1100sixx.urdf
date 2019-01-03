@@ -160,23 +160,13 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="0.01"/>
-      <!--origin rpy="0 0 0" xyz="-0.0075312 1e-07 -0.0009341"/-->
+      <mass value="10.0"/>
       <origin rpy="0 0 0" xyz="0 0 0"/>
-      <!--inertia ixx="0.000603033772181" ixy="-0.0" ixz="-4.00686891815e-06" iyy="-4.00686891815e-06" iyz="-0.0" izz="0.000340583858042"/-->
-      <inertia ixx="4.0e-07" ixy="0.0" ixz="0.0" iyy="4.0e-07" iyz="0.0" izz="4.0e-07"/>
+      <inertia ixx="0.1" ixy="0" ixz="0" iyy="0.1" iyz="0.0" izz="0.1"/>
     </inertial>
   </link>
   <!-- This frame corresponds to the $FLANGE coordinate system in KUKA KRC controllers. -->
-  <link name="tool0">
-    <inertial>
-      <mass value="10.0"/>
-      <!--origin rpy="0 0 0" xyz="-0.0075312 1e-07 -0.0009341"/-->
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <!--inertia ixx="0.000603033772181" ixy="-0.0" ixz="-4.00686891815e-06" iyy="-4.00686891815e-06" iyz="-0.0" izz="0.000340583858042"/-->
-      <inertia ixx="0.02" ixy="0" ixz="0" iyy="0.02" iyz="0.0" izz="0.02"/>
-    </inertial>
-  </link>
+
   <joint name="joint_a1" type="revolute">
     <origin rpy="0 0 0" xyz="0 0 0.400"/>
     <parent link="base_link"/>
@@ -219,11 +209,11 @@
     <axis xyz="-1 0 0"/>
     <limit effort="0" lower="-6.10865238198" upper="6.10865238198" velocity="10.7337748998"/>
   </joint>
-  <joint name="joint_a6-tool0" type="fixed">
+  <!--joint name="joint_a6-tool0" type="fixed">
     <parent link="link_6"/>
     <child link="tool0"/>
     <origin rpy="0 1.57079632679 0" xyz="0 0 0"/>
-  </joint>
+  </joint-->
   <!-- ROS base_link to KUKA $ROBROOT coordinate system transform -->
   <link name="base"/>
   <joint name="base_link-base" type="fixed">

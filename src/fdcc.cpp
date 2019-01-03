@@ -10,6 +10,8 @@ using namespace RigidBodyDynamics;
 using namespace RigidBodyDynamics::Math;
 using namespace std;
 
+#define DEG2RAD 0.01745329252
+
 FDCC::FDCC()
 {
 
@@ -38,8 +40,11 @@ FDCC::FDCC()
 	// load Impedance control params
 	this->loadImpedanceParams();
 
-	// init publisher
+	// init publishers
 	this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/joint_trajectory_action/goal", 10);
+
+	// init subscribers
+	this->XDesiredSub = n.subscribe("/pose_desired", 10, &FDCC::XDesiredCallback, this);
 
 	// bind constraint
 
@@ -50,6 +55,20 @@ FDCC::FDCC()
 	//this->CS.Bind(*this->model);
 
 	// run()
+
+	// joint limits !! modify this to load from YAML
+	this->joint_limit_min[0] = DEG2RAD * (-170.0);
+	this->joint_limit_max[0] = DEG2RAD * ( 170);
+	this->joint_limit_min[1] = DEG2RAD * (-190.0);
+	this->joint_limit_max[1] = DEG2RAD * ( 45);
+	this->joint_limit_min[2] = DEG2RAD * (-120.0);
+	this->joint_limit_max[2] = DEG2RAD * ( 156);
+	this->joint_limit_min[3] = DEG2RAD * (-185.0);
+	this->joint_limit_max[3] = DEG2RAD * ( 185);
+	this->joint_limit_min[4] = DEG2RAD * (-120.0);
+	this->joint_limit_max[4] = DEG2RAD * ( 120);
+	this->joint_limit_min[5] = DEG2RAD * (-350.0);
+	this->joint_limit_max[5] = DEG2RAD * ( 350);
 
 }
 
@@ -79,14 +98,18 @@ void FDCC::loadURDF(const char * filename)
 	this->Q(1) = -1.57;
 	this->Q(2) = 1.57;
 	//this->Q(4) = 0.5;
-	this->X 		= SpatialVector (0., 0., 1., 0.620446, 0., 0.995);
+	
+	//this->Q(1) = -2;
+	//this->Q(2) = 2;
+
+	this->X 		= SpatialVector (1.0, 0., 0., 0.620446, 0., 0.995);
 	this->XDot 		= SpatialVector (0., 0., 0., 0., 0., 0.);
 	this->XDDot 	= SpatialVector (0., 0., 0., 0., 0., 0.);
-	this->X0 		= SpatialVector (0., 0., 1., 0.620446, 0., 0.995);
+	this->X0 		= SpatialVector (1.0, 0., 0., 0.620446, 0., 0.995);
 	this->XDot0 	= SpatialVector (0., 0., 0., 0., 0., 0.);
 	this->XDDot0 	= SpatialVector (0., 0., 0., 0., 0., 0.);
 
-	this->X_desired	= SpatialVector (0., 0., 1., 0.57, 0., 0.995);
+	this->X_desired	= SpatialVector (1.0, 0., 0., 0.620446, 0., 0.995);
 
     this->Imp_c		= MatrixNd::Zero(this->model->dof_count, this->model->dof_count);
     this->Imp_k		= MatrixNd::Zero(this->model->dof_count, this->model->dof_count);
@@ -398,11 +421,11 @@ void FDCC::CalcForwardDynamics(SpatialVector Fc)
 	
 	//std::cout << "Tau: " << this->Tau.transpose() << endl;
 
-	std::cout << "F_ctrl: " << Fc.transpose() << endl;
+	//std::cout << "F_ctrl: " << Fc.transpose() << endl;
 	this->Fext[6] = Fc;
 
 
-	std::cout << "Tau: " << this->Tau.transpose() << endl;
+	//std::cout << "Tau: " << this->Tau.transpose() << endl;
 
 	//Fext.push_back(Fc);
 
@@ -418,12 +441,31 @@ void FDCC::CalcForwardDynamics(SpatialVector Fc)
 	//ForwardDynamicsConstraintsDirect(*this->model, this->Q, this->QDot, this->Tau, this->CS, this->QDDot, &Fext);
 	//ForwardDynamicsConstraintsNullSpace(*this->model, this->Q, this->QDot, this->Tau, this->CS, this->QDDot, &Fext);
 
+	double temp_QDot, temp_Q;
 	// integrate
 	for (int i = 0; i < 6; i++)
 	{
-		this->QDot(i) 	= this->QDot(i) + this->QDDot(i)*this->delta_t;
-		this->Q(i) 		= this->Q(i) 	+ this->QDot(i)*this->delta_t;
+		
+		temp_QDot 	= this->QDot(i) + this->QDDot(i)*this->delta_t;
+		temp_Q 		= this->Q(i) 	+ this->QDot(i)*this->delta_t;
+		
+		// check joint limit
+		if (temp_Q > this->joint_limit_min[i] && temp_Q < this->joint_limit_max[i])
+		{
+			this->QDot(i) = temp_QDot;
+			this->Q(i) = temp_Q;
+		}
+		else
+		{
+			this->QDDot(i) = 0;
+			this->QDot(i) = 0;
+		}
+		
+		//this->QDot(i) 	= this->QDot(i) + this->QDDot(i)*this->delta_t;
+		//this->Q(i) 		= this->Q(i) 	+ this->QDot(i)*this->delta_t;
 	}
+
+	this->CheckJointLimits();
 	
 }
 
@@ -443,25 +485,28 @@ void FDCC::CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot)
 	Vector3d tempX = Vector3d::Zero();
 
 	// position
-	tempX = CalcBodyToBaseCoordinates(*this->model, this->Q, 6, Vector3d(0., 0., 0.05));
+	tempX = CalcBodyToBaseCoordinates(*this->model, this->Q, 6, Vector3d(0., 0., 0.0));
 	this->X(3) = tempX(0);
 	this->X(4) = tempX(1);
 	this->X(5) = tempX(2);
 
 	// orientation
 	Matrix3d tempE = Matrix3d::Zero();
-	tempE = CalcBodyWorldOrientation(*this->model, this->Q,6);
+
+
+	tempE = CalcBodyWorldOrientation(*this->model, this->Q, 6);
+	std::cout << "E6: " << tempE << endl;
 
 	this->X(0) = tempE(0, 0);
-	this->X(1) = tempE(0, 1);
-	this->X(2) = tempE(0, 2);
-	
+	this->X(1) = tempE(1, 0);
+	this->X(2) = tempE(2, 0);
+
 	this->XDot = CalcPointVelocity6D(*this->model, this->Q, this->QDot, 6, base_position, false);
 	this->XDDot = CalcPointAcceleration6D(*this->model, this->Q, this->QDot, this->QDDot, 6, base_position, false);
 
 	std::cout << "X: " << this->X.transpose() << endl;
-	std::cout << "XDot: " << this->XDot.transpose() << endl;
-	std::cout << "XDDot: " << this->XDDot.transpose() << endl;
+	//std::cout << "XDot: " << this->XDot.transpose() << endl;
+	//std::cout << "XDDot: " << this->XDDot.transpose() << endl;
 }
 
 
@@ -492,11 +537,37 @@ void FDCC::SetDesiredToolForce(SpatialVector F_desired)
 	this->F_desired = F_desired;	
 }
 
+void FDCC::XDesiredCallback(const geometry_msgs::Pose &msg)
+{
+
+	this->X_desired(0) = msg.orientation.x ; //2*msg.orientation.x*msg.orientation.z + 2*msg.orientation.y*msg.orientation.w;
+	this->X_desired(1) = msg.orientation.y ; //2*msg.orientation.y*msg.orientation.z - 2*msg.orientation.x*msg.orientation.w;
+	this->X_desired(2) = msg.orientation.z ; //1 - 2*msg.orientation.x*msg.orientation.x - 2*msg.orientation.y*msg.orientation.y;
+
+	this->X_desired(3) = msg.position.x;
+	this->X_desired(4) = msg.position.y;
+	this->X_desired(5) = msg.position.z;
+}
+
 SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired)
 {
 	SpatialVector F = SpatialVector::Zero(this->model->dof_count);
+	SpatialVector DeltaX = SpatialVector::Zero(this->model->dof_count);
 
-	F = this->Imp_c*(X_desired - this->X); // - this->Imp_k*this->XDot - this->Imp_I*this->XDDot;
+
+	DeltaX = X_desired - this->X;
+	DeltaX(0) = -( this->X(1)*X_desired(2) - this->X(2)*X_desired(1));
+	DeltaX(1) = -(-this->X(0)*X_desired(2) + this->X(2)*X_desired(0));
+	DeltaX(2) = -( this->X(0)*X_desired(1) - this->X(1)*X_desired(0));
+
+	F = this->Imp_c*DeltaX - this->Imp_k*this->XDot - this->Imp_I*this->XDDot;
+
+	std::cout << " XDesired: " << X_desired.transpose() << endl;
+
+	// Spatial transform addon translation
+	F(0) +=  -( F(4)*this->X(5) - F(5)*this->X(4));
+	F(1) +=  -(-F(3)*this->X(5) + F(5)*this->X(3));
+	F(2) +=  -( F(3)*this->X(4) - F(4)*this->X(3)); 
 
 	return F;
 }
@@ -533,7 +604,7 @@ void FDCC::ControlLoop(void)
 
 		//F_imp = SpatialVector(0.0, 0., 0., 0.5, 0., 0.);
 
-		std::cout << "F_imp: " << F_imp.transpose() << endl;
+		//std::cout << "F_imp: " << F_imp.transpose() << endl;
 		// Read Sensor Data
 
 		// Calculate Fnet
@@ -542,24 +613,26 @@ void FDCC::ControlLoop(void)
 		std::cout << "F_net: " << F_net.transpose() << endl;
 
 		// Calculate F_ctrl
-		F_ctrl(0) = (double) (-1.0*this->PD_ctrl[0]->compute(F_net(0)));
-		F_ctrl(1) = (double) (-1.0*this->PD_ctrl[1]->compute(F_net(1)));
-		F_ctrl(2) = (double) (-1.0*this->PD_ctrl[2]->compute(F_net(2)));
-		F_ctrl(3) = (double) (-1.0*this->PD_ctrl[3]->compute(F_net(3)));
-		F_ctrl(4) = (double) (-1.0*this->PD_ctrl[4]->compute(F_net(4)));
-		F_ctrl(5) = (double) (-1.0*this->PD_ctrl[5]->compute(F_net(5)));
+		F_ctrl(0) = (double) (1.0*this->PD_ctrl[0]->compute(F_net(0)));
+		F_ctrl(1) = (double) (1.0*this->PD_ctrl[1]->compute(F_net(1)));
+		F_ctrl(2) = (double) (1.0*this->PD_ctrl[2]->compute(F_net(2)));
+		F_ctrl(3) = (double) (1.0*this->PD_ctrl[3]->compute(F_net(3)));
+		F_ctrl(4) = (double) (1.0*this->PD_ctrl[4]->compute(F_net(4)));
+		F_ctrl(5) = (double) (1.0*this->PD_ctrl[5]->compute(F_net(5)));
 
+		//std::cout << "F_ctrl: " << F_ctrl.transpose() << endl;
 
-		F_ctrl = SpatialVector(0.0, 0.0, 0.0, 0.0, 0.01, 0.0);
+		//F_ctrl = SpatialVector(0.0, -0.02*this->X(5), 0.0, -0.02, 0.0, 0.0);
+		//F_ctrl = SpatialVector(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 		
 
 		// Forward Dynamics including integration
 		
 		this->CalcForwardDynamics(F_ctrl);
 
-		std::cout << "Q: " << this->Q.transpose() << endl;
-		std::cout << "QDot: " << this->QDot.transpose() << endl;		
-		std::cout << "QDDot: " << this->QDDot.transpose() << endl;
+		//std::cout << "Q: " << this->Q.transpose() << endl;
+		//std::cout << "QDot: " << this->QDot.transpose() << endl;		
+		//std::cout << "QDDot: " << this->QDDot.transpose() << endl;
 
 		// Move robot
 		this->F_sensor = SpatialVector(0., 0., 0., 0., 0., 0.);
@@ -569,6 +642,57 @@ void FDCC::ControlLoop(void)
 		std::cout << endl;
 		r.sleep();
 	}
+}
+
+bool FDCC::CheckJointLimits()
+{
+	int qdot_limit = 100;
+	int qddot_limit = 100;
+
+	if (this->Q(0) < this->joint_limit_min[0] || this->Q(0) > this->joint_limit_max[0])
+		return false;	
+	else if (this->Q(1) < this->joint_limit_min[1] || this->Q(1) > this->joint_limit_max[1])
+		return false;
+	else if (this->Q(2) < this->joint_limit_min[2] || this->Q(2) > this->joint_limit_max[2])
+		return false;
+	else if (this->Q(3) < this->joint_limit_min[3] || this->Q(3) > this->joint_limit_max[3])
+		return false;
+	else if (this->Q(4) < this->joint_limit_min[4] || this->Q(4) > this->joint_limit_max[4])
+		return false;
+	else if (this->Q(5) < this->joint_limit_min[5] || this->Q(5) > this->joint_limit_max[5])
+		return false;
+	
+	// check QDot limits
+	if (this->QDot(0) < -qdot_limit || this->QDot(0) > qdot_limit)
+		return false;
+	else if (this->QDot(1) < -qdot_limit || this->QDot(1) > qdot_limit)
+		return false;
+	else if (this->QDot(2) < -qdot_limit || this->QDot(2) > qdot_limit)
+		return false;
+	else if (this->QDot(3) < -qdot_limit || this->QDot(3) > qdot_limit)
+		return false;
+	else if (this->QDot(4) < -qdot_limit || this->QDot(4) > qdot_limit)
+		return false;
+	else if (this->QDot(5) < -qdot_limit || this->QDot(5) > qdot_limit)
+		return false;
+
+	// check QDot limits
+	if (this->QDDot(0) < -qddot_limit || this->QDDot(0) > qddot_limit)
+		return false;
+	else if (this->QDDot(1) < -qddot_limit || this->QDDot(1) > qddot_limit)
+		return false;
+	else if (this->QDDot(2) < -qddot_limit || this->QDDot(2) > qddot_limit)
+		return false;
+	else if (this->QDDot(3) < -qddot_limit || this->QDDot(3) > qddot_limit)
+		return false;
+	else if (this->QDDot(4) < -qddot_limit || this->QDDot(4) > qddot_limit)
+		return false;
+	else if (this->QDDot(5) < -qddot_limit || this->QDDot(5) > qddot_limit)
+		return false;
+
+
+	return true;
+
 }
 
 void FDCC::SetDeltaT (double delta_t)

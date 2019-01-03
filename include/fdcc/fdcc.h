@@ -8,6 +8,9 @@ Author: Bruno Maric
 #include <ros/package.h>
 #include "yaml-cpp/yaml.h"
 
+#include <tf/tf.h>
+
+
 #include <iostream>
 
 #include "rbdl/rbdl.h"
@@ -19,6 +22,8 @@ Author: Bruno Maric
 #include "control_msgs/FollowJointTrajectoryActionGoal.h"
 #include "control_msgs/FollowJointTrajectoryActionFeedback.h"
 #include "control_msgs/FollowJointTrajectoryActionResult.h"
+
+#include "geometry_msgs/Pose.h"
 
 using namespace RigidBodyDynamics;
 using namespace RigidBodyDynamics::Math;
@@ -40,8 +45,12 @@ class FDCC{
 		void 	SetDesiredToolPosition(SpatialVector X_desired);
 		void 	SetDesiredToolForce(SpatialVector F_desired);
 
+		void 	XDesiredCallback(const geometry_msgs::Pose &msg);
+
 		SpatialVector ImpedanceControl (SpatialVector X_desired);
 		void 	ControlLoop(void);
+
+		bool 	CheckJointLimits();
 
 
 
@@ -58,6 +67,12 @@ class FDCC{
 		int 	dummy;
 		Model* 	model;
 		PidControllerBase* 	PD_ctrl[6];
+
+		// Publishers
+		ros::Publisher kuka_kr10_joints_pub;
+
+		// Subscribers
+		ros::Subscriber XDesiredSub;
 
 		// virtual model init states
 		// Joint init states
@@ -105,12 +120,17 @@ class FDCC{
 		double ForcePD_Kd[6];
 
 		// Integration time constant
-		double	delta_t;
-
-		// Publishers
-		ros::Publisher kuka_kr10_joints_pub;	
+		double	delta_t;	
 
 		//Jocobian
 		MatrixNd Jacobian_matrix;	
 		ConstraintSet CS;	
+
+		// joint limits
+		double joint_limit_min[6];
+		double joint_limit_max[6];
+
+		double joint_velocity_limit_min[6];
+		double joint_velocity_limit_max[6];
+
 };
