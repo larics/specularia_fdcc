@@ -18,6 +18,19 @@ find_package(catkin REQUIRED COMPONENTS
           message_generation
 )
 
+add_message_files(
+  FILES
+  fdcc_state.msg
+)
+
+## Generate added messages and services with any dependencies listed here
+generate_messages(
+    DEPENDENCIES
+    std_msgs
+    ##actionlib_msgs
+    #geometry_msgs
+    #std_msgs
+)
 # We need to add the project source path to the CMake module path so that
 # the FindRBDL.cmake script can be found.
 LIST( APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR} )

@@ -1,16 +1,16 @@
 ForcePDConfig:
   dt: 0.01
   Kp:
-    spatial0: 1.5
-    spatial1: 1.5
-    spatial2: 1.5
-    spatial3: 1.5
-    spatial4: 1.5
-    spatial5: 1.5
+    spatial0: 1.0
+    spatial1: 1.0
+    spatial2: 1.0
+    spatial3: 1.0
+    spatial4: 1.0
+    spatial5: 1.0
   Kd:
-    spatial0: 0.5
-    spatial1: 0.5
-    spatial2: 0.5
-    spatial3: 0.5
-    spatial4: 0.5
-    spatial5: 0.5
+    spatial0: 0.0
+    spatial1: 0.0
+    spatial2: 0.0
+    spatial3: 0.0
+    spatial4: 0.0
+    spatial5: 0.0

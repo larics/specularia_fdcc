@@ -24,6 +24,9 @@ Author: Bruno Maric
 #include "control_msgs/FollowJointTrajectoryActionResult.h"
 
 #include "geometry_msgs/Pose.h"
+#include "sensor_msgs/JointState.h"
+
+#include <fdcc/fdcc_state.h>
 
 using namespace RigidBodyDynamics;
 using namespace RigidBodyDynamics::Math;
@@ -34,18 +37,20 @@ class FDCC{
 		FDCC();
 		~FDCC();
 
-		void 	loadURDF(const char * filename);
-		void 	loadImpedanceParams(void);
-		void 	loadPDParams(void);
-		void 	CalcForwardDynamics(SpatialVector Fc);
-		void 	CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot);
+		void 			loadURDF(const char * filename);
+		void 			loadImpedanceParams(void);
+		void 			loadPDParams(void);
+		void 			CalcForwardDynamics(SpatialVector Fc);
+		void 			CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot);
 
-		void 	SetInitCartesianState (SpatialVector X0, SpatialVector XDot0, SpatialVector XDDot0);
-		void 	SetInitJointPoseState (VectorNd Q0, VectorNd QDot0, VectorNd QDDot0);	
-		void 	SetDesiredToolPosition(SpatialVector X_desired);
-		void 	SetDesiredToolForce(SpatialVector F_desired);
+		SpatialVector	ConvertForceToSpatial(SpatialVector Fbase, VectorNd PointPosition);
 
-		void 	XDesiredCallback(const geometry_msgs::Pose &msg);
+		void 			SetInitCartesianState (SpatialVector X0, SpatialVector XDot0, SpatialVector XDDot0);
+		void 			SetInitJointPoseState (VectorNd Q0, VectorNd QDot0, VectorNd QDDot0);	
+		void 			SetDesiredToolPosition(SpatialVector X_desired);
+		void 			SetDesiredToolForce(SpatialVector F_desired);
+
+		void 			XDesiredCallback(const geometry_msgs::Pose &msg);
 
 		SpatialVector ImpedanceControl (SpatialVector X_desired);
 		void 	ControlLoop(void);
@@ -54,13 +59,15 @@ class FDCC{
 
 
 
-		void 	SetDeltaT (double delta_t);
-		double 	GetDeltaT (void);
+		void 		SetDeltaT (double delta_t);
+		double 		GetDeltaT (void);
 
-		void createRobotTrajectoryMsg(void);
+		void 		CreateJointStatesMsg(void);
+		void 		createRobotTrajectoryMsg(void);
+		void 		CreateFDCCStateMsg(void);
 
 
-		void 	testing(void);
+		void 		testing(void);
 
 
 	private:
@@ -70,6 +77,8 @@ class FDCC{
 
 		// Publishers
 		ros::Publisher kuka_kr10_joints_pub;
+		ros::Publisher kuka_kr10_joint_state_emulator_pub;
+		ros::Publisher fdcc_state_pub;
 
 		// Subscribers
 		ros::Subscriber XDesiredSub;
@@ -92,13 +101,15 @@ class FDCC{
 		VectorNd	QDDot;
 
 		// Tool states
+		Matrix3d		E;
 		SpatialVector 	X;
 		SpatialVector	XDot;
 		SpatialVector	XDDot;
 
 		// Tool desired position and force
-		SpatialVector X_desired;
-		SpatialVector F_desired;
+		Matrix3d		E_desired;
+		SpatialVector 	X_desired;
+		SpatialVector 	F_desired;
 
 		// Joint forces
 		VectorNd Tau;

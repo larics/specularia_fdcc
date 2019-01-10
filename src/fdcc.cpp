@@ -24,7 +24,7 @@ FDCC::FDCC()
 	this->model = new Model();
 
 	// load URDF
-	this->loadURDF("/home/bmaric/catkin_ws/src/fdcc/urdf/kr10r1100sixx.urdf");
+	this->loadURDF("/home/bmaric/kuka_ws/src/FDCC/urdf/kr10r1100sixx.urdf");
 
 	// init PD controllers
 	this->PD_ctrl[0] = new PidControllerBase(0, 0, 0);
@@ -41,10 +41,13 @@ FDCC::FDCC()
 	this->loadImpedanceParams();
 
 	// init publishers
-	this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/joint_trajectory_action/goal", 10);
+	this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/joint_trajectory_action/goal", 1);
+	this->kuka_kr10_joint_state_emulator_pub = n.advertise<sensor_msgs::JointState>("/joint_states", 1);
+	this->fdcc_state_pub = n.advertise<fdcc::fdcc_state>("/fdcc_state", 1);
+
 
 	// init subscribers
-	this->XDesiredSub = n.subscribe("/pose_desired", 10, &FDCC::XDesiredCallback, this);
+	this->XDesiredSub = n.subscribe("/pose_desired", 1, &FDCC::XDesiredCallback, this);
 
 	// bind constraint
 
@@ -110,6 +113,12 @@ void FDCC::loadURDF(const char * filename)
 	this->XDDot0 	= SpatialVector (0., 0., 0., 0., 0., 0.);
 
 	this->X_desired	= SpatialVector (1.0, 0., 0., 0.620446, 0., 0.995);
+	this->E_desired = Matrix3d::Zero();
+	this->E_desired(0, 0) = 1;
+	this->E_desired(1, 1) = 1;
+	this->E_desired(2, 2) = 1;
+	
+
 
     this->Imp_c		= MatrixNd::Zero(this->model->dof_count, this->model->dof_count);
     this->Imp_k		= MatrixNd::Zero(this->model->dof_count, this->model->dof_count);
@@ -491,25 +500,43 @@ void FDCC::CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot)
 	this->X(5) = tempX(2);
 
 	// orientation
-	Matrix3d tempE = Matrix3d::Zero();
+	this->E = Matrix3d::Zero();
 
+	this->E = CalcBodyWorldOrientation(*this->model, this->Q, 6);
+	//std::cout << "E6: " << this->E << endl;
 
-	tempE = CalcBodyWorldOrientation(*this->model, this->Q, 6);
-	std::cout << "E6: " << tempE << endl;
+	//this->X(0) = tempE(0, 0);
+	//this->X(1) = tempE(1, 0);
+	//this->X(2) = tempE(2, 0);
 
-	this->X(0) = tempE(0, 0);
-	this->X(1) = tempE(1, 0);
-	this->X(2) = tempE(2, 0);
+	this->X(0) = this->E(0, 0);
+	this->X(1) = this->E(0, 1);
+	this->X(2) = this->E(0, 2);
+
 
 	this->XDot = CalcPointVelocity6D(*this->model, this->Q, this->QDot, 6, base_position, false);
 	this->XDDot = CalcPointAcceleration6D(*this->model, this->Q, this->QDot, this->QDDot, 6, base_position, false);
 
-	std::cout << "X: " << this->X.transpose() << endl;
+	//std::cout << "X: " << this->X.transpose() << endl;
 	//std::cout << "XDot: " << this->XDot.transpose() << endl;
 	//std::cout << "XDDot: " << this->XDDot.transpose() << endl;
 }
 
+SpatialVector FDCC::ConvertForceToSpatial(SpatialVector Fbase, VectorNd PointPosition)
+{
 
+	// Convert torques and forces given in base coordinate system to SpatialForce in given PointPostion
+
+	// Spatial transform addon translation
+	Fbase(0) +=  -( Fbase(4)*PointPosition(5) - Fbase(5)*PointPosition(4));
+	Fbase(1) +=  -(-Fbase(3)*PointPosition(5) + Fbase(5)*PointPosition(3));
+	Fbase(2) +=  -( Fbase(3)*PointPosition(4) - Fbase(4)*PointPosition(3));
+
+	return Fbase; 
+
+
+
+}
 
 void FDCC::SetInitCartesianState (SpatialVector X0, SpatialVector XDot0, SpatialVector XDDot0)
 {
@@ -540,9 +567,31 @@ void FDCC::SetDesiredToolForce(SpatialVector F_desired)
 void FDCC::XDesiredCallback(const geometry_msgs::Pose &msg)
 {
 
-	this->X_desired(0) = msg.orientation.x ; //2*msg.orientation.x*msg.orientation.z + 2*msg.orientation.y*msg.orientation.w;
-	this->X_desired(1) = msg.orientation.y ; //2*msg.orientation.y*msg.orientation.z - 2*msg.orientation.x*msg.orientation.w;
-	this->X_desired(2) = msg.orientation.z ; //1 - 2*msg.orientation.x*msg.orientation.x - 2*msg.orientation.y*msg.orientation.y;
+
+	// TODO: Convert quaternion to approach vector 
+	//this->X_desired(0) = msg.orientation.x ; //2*msg.orientation.x*msg.orientation.z + 2*msg.orientation.y*msg.orientation.w;
+	//this->X_desired(1) = msg.orientation.y ; //2*msg.orientation.y*msg.orientation.z - 2*msg.orientation.x*msg.orientation.w;
+	//this->X_desired(2) = msg.orientation.z ; //1 - 2*msg.orientation.x*msg.orientation.x - 2*msg.orientation.y*msg.orientation.y;
+
+	// Convert quaternion to transformation matrix
+	this->E_desired(0, 0) = 1 - 2*msg.orientation.y*msg.orientation.y - 2*msg.orientation.z*msg.orientation.z;
+	this->E_desired(1, 0) = 2*msg.orientation.x*msg.orientation.y + 2*msg.orientation.z*msg.orientation.w;
+	this->E_desired(2, 0) = 2*msg.orientation.x*msg.orientation.z - 2*msg.orientation.y*msg.orientation.w;
+
+	this->E_desired(0, 1) = 2*msg.orientation.x*msg.orientation.y - 2*msg.orientation.z*msg.orientation.w;
+	this->E_desired(1, 1) = 1 - 2*msg.orientation.x*msg.orientation.x - 2*msg.orientation.z*msg.orientation.z;
+	this->E_desired(2, 1) = 2*msg.orientation.y*msg.orientation.z + 2*msg.orientation.x*msg.orientation.w;
+
+
+	this->E_desired(0, 2) = 2*msg.orientation.x*msg.orientation.z + 2*msg.orientation.y*msg.orientation.w;
+	this->E_desired(1, 2) = 2*msg.orientation.y*msg.orientation.z - 2*msg.orientation.x*msg.orientation.w;
+	this->E_desired(2, 2) = 1 - 2*msg.orientation.x*msg.orientation.x - 2*msg.orientation.y*msg.orientation.y;
+
+	// TODO preurediti ovo pametnije!!!
+	// approach vector - x vector
+	this->X_desired(0) = this->E_desired(0, 0); //2*msg.orientation.x*msg.orientation.z + 2*msg.orientation.y*msg.orientation.w;
+	this->X_desired(1) = this->E_desired(1, 0); //2*msg.orientation.y*msg.orientation.z - 2*msg.orientation.x*msg.orientation.w;
+	this->X_desired(2) = this->E_desired(2, 0); //1 - 2*msg.orientation.x*msg.orientation.x - 2*msg.orientation.y*msg.orientation.y;
 
 	this->X_desired(3) = msg.position.x;
 	this->X_desired(4) = msg.position.y;
@@ -555,21 +604,42 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired)
 	SpatialVector DeltaX = SpatialVector::Zero(this->model->dof_count);
 
 
+	// Rotate to fit approach x-vector
 	DeltaX = X_desired - this->X;
-	DeltaX(0) = -( this->X(1)*X_desired(2) - this->X(2)*X_desired(1));
-	DeltaX(1) = -(-this->X(0)*X_desired(2) + this->X(2)*X_desired(0));
-	DeltaX(2) = -( this->X(0)*X_desired(1) - this->X(1)*X_desired(0));
+	// Vector product - rotation vector
+	DeltaX(0) = ( this->X(1)*X_desired(2) - this->X(2)*X_desired(1));
+	DeltaX(1) = (-this->X(0)*X_desired(2) + this->X(2)*X_desired(0));
+	DeltaX(2) = ( this->X(0)*X_desired(1) - this->X(1)*X_desired(0));
+	
+	// Scalar product - scale rotation vector
+	DeltaX(0) = DeltaX(0)*(X_desired(0)*this->X(0) + X_desired(1)*this->X(1) + X_desired(2)*this->X(2));
+	DeltaX(1) = DeltaX(1)*(X_desired(0)*this->X(0) + X_desired(1)*this->X(1) + X_desired(2)*this->X(2));
+	DeltaX(2) = DeltaX(2)*(X_desired(0)*this->X(0) + X_desired(1)*this->X(1) + X_desired(2)*this->X(2));
+
+	// Rotate to fit z vector
+	Matrix3d Erot = this->E_desired.transpose()*this->E.inverse();
+	std::cout << "Delta X " << DeltaX(0) << ", "<< DeltaX(1) << ", "<< DeltaX(2) <<endl;
+	std::cout << "Approach vector " << X_desired(0) << ", "<< X_desired(1) << ", "<< X_desired(2) <<endl;
+	std::cout << "Rot angle " << atan2(Erot(2, 1), Erot(1, 1))/3.14 << endl;
+	DeltaX(0) += X_desired(0)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
+	DeltaX(1) += X_desired(1)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
+	DeltaX(2) += X_desired(2)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
 
 	F = this->Imp_c*DeltaX - this->Imp_k*this->XDot - this->Imp_I*this->XDDot;
 
-	std::cout << " XDesired: " << X_desired.transpose() << endl;
+	
+
+	//std::cout << " XDesired: " << X_desired.transpose() << endl;
 
 	// Spatial transform addon translation
-	F(0) +=  -( F(4)*this->X(5) - F(5)*this->X(4));
-	F(1) +=  -(-F(3)*this->X(5) + F(5)*this->X(3));
-	F(2) +=  -( F(3)*this->X(4) - F(4)*this->X(3)); 
+	//F(0) +=  -( F(4)*this->X(5) - F(5)*this->X(4));
+	//F(1) +=  -(-F(3)*this->X(5) + F(5)*this->X(3));
+	//F(2) +=  -( F(3)*this->X(4) - F(4)*this->X(3));
 
-	return F;
+	// Convert Force in base coordinate system to Spatial Force
+
+
+	return this->ConvertForceToSpatial(F, this->X);
 }
 
 void FDCC::ControlLoop(void)
@@ -586,7 +656,9 @@ void FDCC::ControlLoop(void)
 	control_msgs::FollowJointTrajectoryActionGoal joint_msg;
 
 	// init move
-	this->createRobotTrajectoryMsg();
+	//->createRobotTrajectoryMsg();
+
+	ros::Time::init();
 
 	while (ros::ok())
 	{
@@ -610,7 +682,7 @@ void FDCC::ControlLoop(void)
 		// Calculate Fnet
 		F_net = F_imp + this->F_desired + this->F_sensor;
 		
-		std::cout << "F_net: " << F_net.transpose() << endl;
+		//std::cout << "F_net: " << F_net.transpose() << endl;
 
 		// Calculate F_ctrl
 		F_ctrl(0) = (double) (1.0*this->PD_ctrl[0]->compute(F_net(0)));
@@ -637,11 +709,16 @@ void FDCC::ControlLoop(void)
 		// Move robot
 		this->F_sensor = SpatialVector(0., 0., 0., 0., 0., 0.);
 
-		this->createRobotTrajectoryMsg();
+		//this->createRobotTrajectoryMsg();
+		this->CreateJointStatesMsg();
+		this->CreateFDCCStateMsg();
 
-		std::cout << endl;
+		//std::cout << "End of control loop."<< endl;
 		r.sleep();
+		ros::spinOnce(); 
 	}
+
+	//std::cout << "ROS ok exceeded." << endl;
 }
 
 bool FDCC::CheckJointLimits()
@@ -705,6 +782,38 @@ double FDCC::GetDeltaT (void)
 	return this->delta_t;
 }
 
+void FDCC::CreateJointStatesMsg(void)
+{
+	sensor_msgs::JointState return_value;
+
+	std_msgs::Header h;
+	h.stamp = ros::Time::now();
+
+	return_value.header.stamp = h.stamp;
+
+	return_value.name.push_back("joint_a1");
+	return_value.name.push_back("joint_a2");
+	return_value.name.push_back("joint_a3");
+	return_value.name.push_back("joint_a4");
+	return_value.name.push_back("joint_a5");
+	return_value.name.push_back("joint_a6");
+
+	return_value.position.push_back(this->Q(0));
+	return_value.position.push_back(this->Q(1));
+	return_value.position.push_back(this->Q(2));
+	return_value.position.push_back(this->Q(3));
+	return_value.position.push_back(this->Q(4));
+	return_value.position.push_back(this->Q(5));
+
+	return_value.velocity.push_back(this->QDot(0));
+	return_value.velocity.push_back(this->QDot(1));
+	return_value.velocity.push_back(this->QDot(2));
+	return_value.velocity.push_back(this->QDot(3));
+	return_value.velocity.push_back(this->QDot(4));
+	return_value.velocity.push_back(this->QDot(5));
+		
+	this->kuka_kr10_joint_state_emulator_pub.publish(return_value);
+}
 
 void FDCC::createRobotTrajectoryMsg( void )
 {
@@ -725,22 +834,12 @@ void FDCC::createRobotTrajectoryMsg( void )
 	std::ostringstream convert;
 	convert << h.stamp.nsec;
 	return_value.goal_id.id = "Trajectory " + convert.str();
-	std_msgs::Header h2, h_temp;
+	std_msgs::Header h2;
 	ros::Time Tprep = ros::Time::now();
 	h2.stamp.sec =  Tprep.sec  ; 
-	h2.stamp.nsec =  Tprep.nsec + 100;
+	h2.stamp.nsec =  Tprep.nsec + 50;
 	return_value.goal.trajectory.header.stamp = h2.stamp; //kada da krene
 	return_value.header.stamp = h2.stamp;
-
-	//std::cout << sampledTrajectory.pose_joint_1.size() << endl;
-
-	double temp_time;
-	double time_step = 0.01; //0.02; ///50.0;
-
-	double new_time = 2;
-
-	new_time = h2.stamp.sec + h2.stamp.nsec*pow(10, -9);
-	new_time = time_step;
 
 
 	trajectory_msgs::JointTrajectoryPoint point_current;
@@ -752,20 +851,19 @@ void FDCC::createRobotTrajectoryMsg( void )
 	point_current.positions.push_back(this->Q(4));
 	point_current.positions.push_back(this->Q(5));
 
-	
-	point_current.velocities.push_back(this->QDot(0));
-	point_current.velocities.push_back(this->QDot(0));
-	point_current.velocities.push_back(this->QDot(0));
-	point_current.velocities.push_back(this->QDot(0));
-	point_current.velocities.push_back(this->QDot(0));
-	point_current.velocities.push_back(this->QDot(0));
+	point_current.velocities.push_back(0);
+	point_current.velocities.push_back(0);
+	point_current.velocities.push_back(0);
+	point_current.velocities.push_back(0);
+	point_current.velocities.push_back(0);
+	point_current.velocities.push_back(0);
 
-	point_current.accelerations.push_back(this->QDDot(0));
-	point_current.accelerations.push_back(this->QDDot(0));
-	point_current.accelerations.push_back(this->QDDot(0));
-	point_current.accelerations.push_back(this->QDDot(0));
-	point_current.accelerations.push_back(this->QDDot(0));
-	point_current.accelerations.push_back(this->QDDot(0));
+	point_current.accelerations.push_back(0);
+	point_current.accelerations.push_back(0);
+	point_current.accelerations.push_back(0);
+	point_current.accelerations.push_back(0);
+	point_current.accelerations.push_back(0);
+	point_current.accelerations.push_back(0);
 
 	//new_time = new_time + time_step;
 	//point_current.time_from_start.sec = (int) (floor(h2.stamp.sec + 0.01));
@@ -775,7 +873,7 @@ void FDCC::createRobotTrajectoryMsg( void )
 
 	//point_current.time_from_start.sec = 0.01;
 
-	point_current.time_from_start = ros::Duration(0.01);
+	point_current.time_from_start = ros::Duration(0.001);
 
 	//std::cout << point_current.time_from_start.sec<<", "<< (new_time - floor(new_time))*pow(10, 9) <<", " <<h2.stamp<<", "<<h2.stamp.sec<<", "<<h2.stamp.nsec<<", " << endl;
 
@@ -787,6 +885,43 @@ void FDCC::createRobotTrajectoryMsg( void )
 	//return return_value;	
 	
 };
+
+void FDCC::CreateFDCCStateMsg(void)
+{
+
+	fdcc::fdcc_state msg2pub;
+
+	std_msgs::Header h2;
+	ros::Time Tprep = ros::Time::now();
+	h2.stamp.sec =  Tprep.sec  ; 
+	h2.stamp.nsec =  Tprep.nsec;
+	
+	msg2pub.header.stamp = h2.stamp;
+
+	msg2pub.joint_position.push_back(this->Q(0));
+	msg2pub.joint_position.push_back(this->Q(1));
+	msg2pub.joint_position.push_back(this->Q(2));
+	msg2pub.joint_position.push_back(this->Q(3));
+	msg2pub.joint_position.push_back(this->Q(4));
+	msg2pub.joint_position.push_back(this->Q(5));
+
+	msg2pub.joint_velocity.push_back(this->QDot(0));
+	msg2pub.joint_velocity.push_back(this->QDot(1));
+	msg2pub.joint_velocity.push_back(this->QDot(2));
+	msg2pub.joint_velocity.push_back(this->QDot(3));
+	msg2pub.joint_velocity.push_back(this->QDot(4));
+	msg2pub.joint_velocity.push_back(this->QDot(5));
+
+	msg2pub.cartesian_position.push_back(this->X(0));
+	msg2pub.cartesian_position.push_back(this->X(1));
+	msg2pub.cartesian_position.push_back(this->X(2));
+	msg2pub.cartesian_position.push_back(this->X(3));
+	msg2pub.cartesian_position.push_back(this->X(4));
+	msg2pub.cartesian_position.push_back(this->X(5));
+
+	this->fdcc_state_pub.publish(msg2pub);
+
+}
 
 void FDCC::testing(void)
 {
