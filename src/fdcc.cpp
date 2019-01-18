@@ -41,13 +41,16 @@ FDCC::FDCC()
 	this->loadImpedanceParams();
 
 	// init publishers
-	this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/joint_trajectory_action/goal", 1);
+	this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/position_trajectory_controller/follow_joint_trajectory/goal", 1);
+	//this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/joint_trajectory_action/goal", 1);
+	
 	this->kuka_kr10_joint_state_emulator_pub = n.advertise<sensor_msgs::JointState>("/joint_states", 1);
 	this->fdcc_state_pub = n.advertise<fdcc::fdcc_state>("/fdcc_state", 1);
 
 
 	// init subscribers
 	this->XDesiredSub = n.subscribe("/pose_desired", 1, &FDCC::XDesiredCallback, this);
+	this->ForceSensorSub = n.subscribe("/optoforce_node/OptoForceWrench", 1, &FDCC::ForceSensorCallback, this);
 
 	// bind constraint
 
@@ -100,19 +103,20 @@ void FDCC::loadURDF(const char * filename)
 	this->QDDot0 	= VectorNd::Zero (this->model->dof_count);
 	this->Q(1) = -1.57;
 	this->Q(2) = 1.57;
+	//this->Q(4) = 1.57;
 	//this->Q(4) = 0.5;
 	
 	//this->Q(1) = -2;
 	//this->Q(2) = 2;
 
-	this->X 		= SpatialVector (1.0, 0., 0., 0.620446, 0., 0.995);
+	this->X 		= SpatialVector (1.0, 0., 0.0, 0.62, 0., 0.995);
 	this->XDot 		= SpatialVector (0., 0., 0., 0., 0., 0.);
 	this->XDDot 	= SpatialVector (0., 0., 0., 0., 0., 0.);
-	this->X0 		= SpatialVector (1.0, 0., 0., 0.620446, 0., 0.995);
+	this->X0 		= SpatialVector (1.0, 0., 0.0, 0.62, 0., 0.995);
 	this->XDot0 	= SpatialVector (0., 0., 0., 0., 0., 0.);
 	this->XDDot0 	= SpatialVector (0., 0., 0., 0., 0., 0.);
 
-	this->X_desired	= SpatialVector (1.0, 0., 0., 0.620446, 0., 0.995);
+	this->X_desired	= SpatialVector (1.0, 0., 0.0, 0.62, 0., 0.995);
 	this->E_desired = Matrix3d::Zero();
 	this->E_desired(0, 0) = 1;
 	this->E_desired(1, 1) = 1;
@@ -126,8 +130,15 @@ void FDCC::loadURDF(const char * filename)
 
 	this->Tau 		= VectorNd::Zero (this->model->dof_count);
 
-	this->F_sensor	= SpatialVector	(0., 0., 0., 0., 0., 0.);
+	this->F_sensor	= SpatialVector	( 0.097, -0.718, 0.471, -46.2, 1.6, 3.1);
 	this->F_desired	= SpatialVector	(0., 0., 0., 0., 0., 0.);
+
+	this->F_sensorReading.wrench.torque.z = 0.097;
+	this->F_sensorReading.wrench.torque.y = 0.471;
+	this->F_sensorReading.wrench.torque.x = -0.718;
+	this->F_sensorReading.wrench.force.z = -46.2;
+	this->F_sensorReading.wrench.force.y = 3.1;
+	this->F_sensorReading.wrench.force.x = 1.6;
 
 	this->Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
 	this->Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
@@ -517,12 +528,12 @@ void FDCC::CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot)
 	this->XDot = CalcPointVelocity6D(*this->model, this->Q, this->QDot, 6, base_position, false);
 	this->XDDot = CalcPointAcceleration6D(*this->model, this->Q, this->QDot, this->QDDot, 6, base_position, false);
 
-	//std::cout << "X: " << this->X.transpose() << endl;
+	std::cout << "X: " << this->X.transpose() << endl;
 	//std::cout << "XDot: " << this->XDot.transpose() << endl;
 	//std::cout << "XDDot: " << this->XDDot.transpose() << endl;
 }
 
-SpatialVector FDCC::ConvertForceToSpatial(SpatialVector Fbase, VectorNd PointPosition)
+SpatialVector FDCC::ConvertImpedanceForceToSpatial(SpatialVector Fbase, VectorNd PointPosition)
 {
 
 	// Convert torques and forces given in base coordinate system to SpatialForce in given PointPostion
@@ -533,9 +544,55 @@ SpatialVector FDCC::ConvertForceToSpatial(SpatialVector Fbase, VectorNd PointPos
 	Fbase(2) +=  -( Fbase(3)*PointPosition(4) - Fbase(4)*PointPosition(3));
 
 	return Fbase; 
+}
 
+SpatialVector FDCC::ConvertSensorForceToSpatial(SpatialVector Fsensor, VectorNd PointPosition)
+{
+	SpatialVector Fbase = SpatialVector::Zero();
 
+	// Convert torques and forces given in tool coordinate system to base coordinate system
+	MatrixNd T = MatrixNd::Zero(6, 6);
+	Matrix3d Rx = Matrix3d::Zero();
+	Matrix3d temp = Matrix3d::Zero();
 
+	// fill E matrix
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+		{
+			T(i, j) = this->E(i, j);
+			T(i+3, j+3) = this->E(i, j);
+		}
+
+	// Calculate -ERx
+	Rx(0, 0) = 	0;
+	Rx(0, 1) = -this->X(5);
+	Rx(0, 2) = 	this->X(4);
+	Rx(1, 0) = 	this->X(5);
+	Rx(1, 1) = 	0;
+	Rx(1, 2) = -this->X(3);
+	Rx(2, 0) = -this->X(4);
+	Rx(2, 1) = 	this->X(3);
+	Rx(2, 2) = 	0;
+
+	temp = -this->E*Rx;
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+		{
+			T(i+3, j) = Rx(i, j);		
+		}
+
+	// Spatial transform 
+	//std::cout << T << endl;
+
+	Fbase = T.inverse()*Fsensor;
+
+	//std::cout << "Fbase: " << Fbase.transpose() << endl;
+
+	Fbase(0) +=  -( Fbase(4)*PointPosition(5) - Fbase(5)*PointPosition(4));
+	Fbase(1) +=  -(-Fbase(3)*PointPosition(5) + Fbase(5)*PointPosition(3));
+	Fbase(2) +=  -( Fbase(3)*PointPosition(4) - Fbase(4)*PointPosition(3));
+
+	return Fbase; 
 }
 
 void FDCC::SetInitCartesianState (SpatialVector X0, SpatialVector XDot0, SpatialVector XDDot0)
@@ -598,6 +655,12 @@ void FDCC::XDesiredCallback(const geometry_msgs::Pose &msg)
 	this->X_desired(5) = msg.position.z;
 }
 
+void FDCC::ForceSensorCallback (const geometry_msgs::WrenchStamped &msg)
+{
+	//std::cout << "msg: " << msg << endl;
+	this->F_sensorReading = msg;
+}
+
 SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired)
 {
 	SpatialVector F = SpatialVector::Zero(this->model->dof_count);
@@ -618,9 +681,9 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired)
 
 	// Rotate to fit z vector
 	Matrix3d Erot = this->E_desired.transpose()*this->E.inverse();
-	std::cout << "Delta X " << DeltaX(0) << ", "<< DeltaX(1) << ", "<< DeltaX(2) <<endl;
-	std::cout << "Approach vector " << X_desired(0) << ", "<< X_desired(1) << ", "<< X_desired(2) <<endl;
-	std::cout << "Rot angle " << atan2(Erot(2, 1), Erot(1, 1))/3.14 << endl;
+	//std::cout << "Delta X " << DeltaX(0) << ", "<< DeltaX(1) << ", "<< DeltaX(2) <<endl;
+	//std::cout << "Approach vector " << X_desired(0) << ", "<< X_desired(1) << ", "<< X_desired(2) <<endl;
+	//std::cout << "Rot angle " << atan2(Erot(2, 1), Erot(1, 1))/3.14 << endl;
 	DeltaX(0) += X_desired(0)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
 	DeltaX(1) += X_desired(1)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
 	DeltaX(2) += X_desired(2)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
@@ -639,7 +702,7 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired)
 	// Convert Force in base coordinate system to Spatial Force
 
 
-	return this->ConvertForceToSpatial(F, this->X);
+	return this->ConvertImpedanceForceToSpatial(F, this->X);
 }
 
 void FDCC::ControlLoop(void)
@@ -665,23 +728,28 @@ void FDCC::ControlLoop(void)
 		//after calling this function ROS will processes our callbacks
         ros::spinOnce();
 
-		//std::cout << "Control loop..." << endl;
-
 		// Forward kinematics
 		this->CalcForwardKinematics(this->Q, this->QDot, this->QDDot);
 
-		// Updejtati kinematiku!!!!!!!
 		// Impedance Control
 		F_imp = this->ImpedanceControl(this->X_desired);
 
-		//F_imp = SpatialVector(0.0, 0., 0., 0.5, 0., 0.);
 
-		//std::cout << "F_imp: " << F_imp.transpose() << endl;
-		// Read Sensor Data
+		// Prepare Sensor Data
+		this->F_sensor(0) = (this->F_sensorReading.wrench.torque.z-0.097)*2.0;
+		this->F_sensor(1) = (this->F_sensorReading.wrench.torque.y-0.471)*2.0;
+		this->F_sensor(2) = -(this->F_sensorReading.wrench.torque.x+0.718)*2.0;		
+		this->F_sensor(3) = (this->F_sensorReading.wrench.force.z+46.2)/10.0;
+		this->F_sensor(4) = (this->F_sensorReading.wrench.force.y-3.1)/10.0;
+		this->F_sensor(5) = -(this->F_sensorReading.wrench.force.x-1.6)/10.0;
+		//std::cout << "F_sensor: " << this->F_sensor.transpose() << endl;
+		this->F_sensor = this->ConvertSensorForceToSpatial(this->F_sensor, this->X);
+
+		//std::cout << "F_sensor spatial: " << this->F_sensor.transpose() << endl;
 
 		// Calculate Fnet
 		F_net = F_imp + this->F_desired + this->F_sensor;
-		
+		//F_net = SpatialVector::Zero(6);
 		//std::cout << "F_net: " << F_net.transpose() << endl;
 
 		// Calculate F_ctrl
@@ -702,15 +770,15 @@ void FDCC::ControlLoop(void)
 		
 		this->CalcForwardDynamics(F_ctrl);
 
-		//std::cout << "Q: " << this->Q.transpose() << endl;
+		std::cout << "Q: " << this->Q.transpose() << endl;
 		//std::cout << "QDot: " << this->QDot.transpose() << endl;		
 		//std::cout << "QDDot: " << this->QDDot.transpose() << endl;
 
 		// Move robot
-		this->F_sensor = SpatialVector(0., 0., 0., 0., 0., 0.);
+		//this->F_sensor = SpatialVector(0., 0., 0., 0., 0., 0.);
 
-		//this->createRobotTrajectoryMsg();
-		this->CreateJointStatesMsg();
+		this->createRobotTrajectoryMsg();
+		//this->CreateJointStatesMsg();
 		this->CreateFDCCStateMsg();
 
 		//std::cout << "End of control loop."<< endl;
@@ -820,26 +888,13 @@ void FDCC::createRobotTrajectoryMsg( void )
 
 	control_msgs::FollowJointTrajectoryActionGoal return_value;
 	
-	
-	std_msgs::Header h;
-	h.stamp = ros::Time::now();
+
 	return_value.goal.trajectory.joint_names.push_back("joint_a1");
 	return_value.goal.trajectory.joint_names.push_back("joint_a2");
 	return_value.goal.trajectory.joint_names.push_back("joint_a3");
 	return_value.goal.trajectory.joint_names.push_back("joint_a4");
 	return_value.goal.trajectory.joint_names.push_back("joint_a5");
 	return_value.goal.trajectory.joint_names.push_back("joint_a6");
-
-	  //traj_vector_prep.goal_id.stamp = h.stamp;
-	std::ostringstream convert;
-	convert << h.stamp.nsec;
-	return_value.goal_id.id = "Trajectory " + convert.str();
-	std_msgs::Header h2;
-	ros::Time Tprep = ros::Time::now();
-	h2.stamp.sec =  Tprep.sec  ; 
-	h2.stamp.nsec =  Tprep.nsec + 50;
-	return_value.goal.trajectory.header.stamp = h2.stamp; //kada da krene
-	return_value.header.stamp = h2.stamp;
 
 
 	trajectory_msgs::JointTrajectoryPoint point_current;
@@ -850,7 +905,21 @@ void FDCC::createRobotTrajectoryMsg( void )
 	point_current.positions.push_back(this->Q(3));
 	point_current.positions.push_back(this->Q(4));
 	point_current.positions.push_back(this->Q(5));
+/*
+	point_current.velocities.push_back(this->QDot(0));
+	point_current.velocities.push_back(this->QDot(1));
+	point_current.velocities.push_back(this->QDot(2));
+	point_current.velocities.push_back(this->QDot(3));
+	point_current.velocities.push_back(this->QDot(4));
+	point_current.velocities.push_back(this->QDot(5));
 
+	point_current.accelerations.push_back(this->QDDot(0));
+	point_current.accelerations.push_back(this->QDDot(1));
+	point_current.accelerations.push_back(this->QDDot(2));
+	point_current.accelerations.push_back(this->QDDot(3));
+	point_current.accelerations.push_back(this->QDDot(4));
+	point_current.accelerations.push_back(this->QDDot(5));
+*/
 	point_current.velocities.push_back(0);
 	point_current.velocities.push_back(0);
 	point_current.velocities.push_back(0);
@@ -865,17 +934,7 @@ void FDCC::createRobotTrajectoryMsg( void )
 	point_current.accelerations.push_back(0);
 	point_current.accelerations.push_back(0);
 
-	//new_time = new_time + time_step;
-	//point_current.time_from_start.sec = (int) (floor(h2.stamp.sec + 0.01));
-	//point_current.time_from_start.nsec = (int) (h2.stamp.nsec + (0.01)*pow(10, 9));
-	//point_current.time_from_start.nsec = (int) (((double) 0.01)*pow(10, 9)); //(new_time - floor(new_time))*pow(10, 9); //(new_time % ceil(new_time))*pow(10, 9);
-	//point_current.time_from_start.nsec = (int) (0.01*pow(10, 9)); //(new_time - floor(new_time))*pow(10, 9); //(new_time % ceil(new_time))*pow(10, 9);
-
-	//point_current.time_from_start.sec = 0.01;
-
-	point_current.time_from_start = ros::Duration(0.001);
-
-	//std::cout << point_current.time_from_start.sec<<", "<< (new_time - floor(new_time))*pow(10, 9) <<", " <<h2.stamp<<", "<<h2.stamp.sec<<", "<<h2.stamp.nsec<<", " << endl;
+	point_current.time_from_start = ros::Duration(0.015);
 
 	return_value.goal.trajectory.points.push_back(point_current);
 

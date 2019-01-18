@@ -24,6 +24,7 @@ Author: Bruno Maric
 #include "control_msgs/FollowJointTrajectoryActionResult.h"
 
 #include "geometry_msgs/Pose.h"
+#include "geometry_msgs/WrenchStamped.h"
 #include "sensor_msgs/JointState.h"
 
 #include <fdcc/fdcc_state.h>
@@ -37,25 +38,27 @@ class FDCC{
 		FDCC();
 		~FDCC();
 
-		void 			loadURDF(const char * filename);
-		void 			loadImpedanceParams(void);
-		void 			loadPDParams(void);
-		void 			CalcForwardDynamics(SpatialVector Fc);
-		void 			CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot);
+		void 			loadURDF				(const char * filename);
+		void 			loadImpedanceParams		(void);
+		void 			loadPDParams 			(void);
+		void 			CalcForwardDynamics		(SpatialVector Fc);
+		void 			CalcForwardKinematics	(VectorNd Q, VectorNd QDot, VectorNd QDDot);
 
-		SpatialVector	ConvertForceToSpatial(SpatialVector Fbase, VectorNd PointPosition);
+		SpatialVector	ConvertImpedanceForceToSpatial	(SpatialVector Fbase, VectorNd PointPosition);
+		SpatialVector	ConvertSensorForceToSpatial		(SpatialVector Fsensor, VectorNd PointPosition);
 
-		void 			SetInitCartesianState (SpatialVector X0, SpatialVector XDot0, SpatialVector XDDot0);
-		void 			SetInitJointPoseState (VectorNd Q0, VectorNd QDot0, VectorNd QDDot0);	
-		void 			SetDesiredToolPosition(SpatialVector X_desired);
-		void 			SetDesiredToolForce(SpatialVector F_desired);
+		void 			SetInitCartesianState 	(SpatialVector X0, SpatialVector XDot0, SpatialVector XDDot0);
+		void 			SetInitJointPoseState 	(VectorNd Q0, VectorNd QDot0, VectorNd QDDot0);	
+		void 			SetDesiredToolPosition	(SpatialVector X_desired);
+		void 			SetDesiredToolForce		(SpatialVector F_desired);
 
-		void 			XDesiredCallback(const geometry_msgs::Pose &msg);
+		void 			XDesiredCallback		(const geometry_msgs::Pose &msg);
+		void 			ForceSensorCallback		(const geometry_msgs::WrenchStamped &msg);
 
-		SpatialVector ImpedanceControl (SpatialVector X_desired);
-		void 	ControlLoop(void);
+		SpatialVector 	ImpedanceControl 		(SpatialVector X_desired);
+		void 			ControlLoop				(void);
 
-		bool 	CheckJointLimits();
+		bool 			CheckJointLimits		();
 
 
 
@@ -82,6 +85,7 @@ class FDCC{
 
 		// Subscribers
 		ros::Subscriber XDesiredSub;
+		ros::Subscriber ForceSensorSub;
 
 		// virtual model init states
 		// Joint init states
@@ -116,6 +120,7 @@ class FDCC{
 
 		// Sensor readings
 		SpatialVector F_sensor;
+		geometry_msgs::WrenchStamped F_sensorReading;
 
 		std::vector<Math::SpatialVector> Fext;
 
