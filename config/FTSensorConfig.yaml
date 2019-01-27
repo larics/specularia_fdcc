@@ -1,0 +1,4 @@
+FTSensorConfiguration:
+  Zero_readings:
+    Forces: [1.6, 3.1, -46.2]
+    Torques: [-0.718, 0.471, 0.097]

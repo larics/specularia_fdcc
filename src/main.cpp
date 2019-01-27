@@ -19,7 +19,6 @@ int main (int argc, char* argv[]) {
 
 	FDCC v_model;
 
-	v_model.testing();
 	v_model.ControlLoop();
 
 	return 0;

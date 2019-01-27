@@ -16,11 +16,13 @@ find_package(catkin REQUIRED COMPONENTS
           sensor_msgs
           std_msgs
           message_generation
+          tf
 )
 
 add_message_files(
   FILES
   fdcc_state.msg
+  FDCCForceCommandMsg.msg
 )
 
 ## Generate added messages and services with any dependencies listed here

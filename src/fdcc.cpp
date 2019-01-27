@@ -20,6 +20,8 @@ FDCC::FDCC()
 	// constructor
 	//this->dummy = 1;
 
+	this->InitJointStatesLoaded = false;
+
 	// init Model
 	this->model = new Model();
 
@@ -40,25 +42,22 @@ FDCC::FDCC()
 	// load Impedance control params
 	this->loadImpedanceParams();
 
+	// load Force/Torque sensor configuration
+	this->loadFTSensorParams();
+
 	// init publishers
-	this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/position_trajectory_controller/follow_joint_trajectory/goal", 1);
-	//this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/joint_trajectory_action/goal", 1);
+	//this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/position_trajectory_controller/follow_joint_trajectory/goal", 1);
+	this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/joint_trajectory_action/goal", 1);
 	
-	this->kuka_kr10_joint_state_emulator_pub = n.advertise<sensor_msgs::JointState>("/joint_states", 1);
 	this->fdcc_state_pub = n.advertise<fdcc::fdcc_state>("/fdcc_state", 1);
 
 
 	// init subscribers
 	this->XDesiredSub = n.subscribe("/pose_desired", 1, &FDCC::XDesiredCallback, this);
 	this->ForceSensorSub = n.subscribe("/optoforce_node/OptoForceWrench", 1, &FDCC::ForceSensorCallback, this);
+	this->JointStateSub = n.subscribe("/joint_states", 1, &FDCC::JointStateCallback, this);
+	this->DesiredForceSub = n.subscribe("/fdcc/desired_force", 1, &FDCC::DesiredForceCallback, this);
 
-	// bind constraint
-
-	//this->CS.AddContactConstraint(6, Vector3d (0., 0., 0.05), Vector3d (1., 0., 0.));
-	//this->CS.AddContactConstraint(6, Vector3d (0., 0., 0.05), Vector3d (0., 1., 0.));
-	//this->CS.AddContactConstraint(6, Vector3d (0., 0., 0.05), Vector3d (0., 0., 1.));
-
-	//this->CS.Bind(*this->model);
 
 	// run()
 
@@ -101,14 +100,23 @@ void FDCC::loadURDF(const char * filename)
 	this->Q0 		= VectorNd::Zero (this->model->dof_count);
 	this->QDot0 	= VectorNd::Zero (this->model->dof_count);
 	this->QDDot0 	= VectorNd::Zero (this->model->dof_count);
-	this->Q(1) = -1.57;
-	this->Q(2) = 1.57;
+	
+	//this->Q(1) = -1.57;
+	//this->Q(2) = 1.57;
 	//this->Q(4) = 1.57;
 	//this->Q(4) = 0.5;
 	
-	//this->Q(1) = -2;
-	//this->Q(2) = 2;
+	this->X 		= SpatialVector::Zero(6);
+	this->XDot 		= SpatialVector::Zero(6);
+	this->XDDot 	= SpatialVector::Zero(6);
 
+	this->X_desired = SpatialVector::Zero(6);
+	this->E_desired = Matrix3d::Zero();
+	this->E_desired(0, 0) = 1;
+	this->E_desired(1, 1) = 1;
+	this->E_desired(2, 2) = 1;
+
+	/*
 	this->X 		= SpatialVector (1.0, 0., 0.0, 0.62, 0., 0.995);
 	this->XDot 		= SpatialVector (0., 0., 0., 0., 0., 0.);
 	this->XDDot 	= SpatialVector (0., 0., 0., 0., 0., 0.);
@@ -121,7 +129,7 @@ void FDCC::loadURDF(const char * filename)
 	this->E_desired(0, 0) = 1;
 	this->E_desired(1, 1) = 1;
 	this->E_desired(2, 2) = 1;
-	
+	*/
 
 
     this->Imp_c		= MatrixNd::Zero(this->model->dof_count, this->model->dof_count);
@@ -130,15 +138,9 @@ void FDCC::loadURDF(const char * filename)
 
 	this->Tau 		= VectorNd::Zero (this->model->dof_count);
 
-	this->F_sensor	= SpatialVector	( 0.097, -0.718, 0.471, -46.2, 1.6, 3.1);
-	this->F_desired	= SpatialVector	(0., 0., 0., 0., 0., 0.);
-
-	this->F_sensorReading.wrench.torque.z = 0.097;
-	this->F_sensorReading.wrench.torque.y = 0.471;
-	this->F_sensorReading.wrench.torque.x = -0.718;
-	this->F_sensorReading.wrench.force.z = -46.2;
-	this->F_sensorReading.wrench.force.y = 3.1;
-	this->F_sensorReading.wrench.force.x = 1.6;
+	this->F_sensor	= SpatialVector::Zero(6);
+	this->F_desired_tool	= SpatialVector::Zero(6);
+	this->F_desired_base	= SpatialVector::Zero(6);
 
 	this->Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
 	this->Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
@@ -424,48 +426,74 @@ void FDCC::loadPDParams(void)
 	this->PD_ctrl[5]->setKd(this->ForcePD_Kd[5]);
 }
 
+void FDCC::loadFTSensorParams(void)
+{
+
+	ros::NodeHandle private_node_handle_("~");
+	std::string configFile;
+	std::string path = ros::package::getPath("fdcc");
+
+    //getting ros params
+    private_node_handle_.param("config_file", configFile, path + std::string("/config/FTSensorConfig.yaml"));
+
+    // Open file
+    YAML::Node config = YAML::LoadFile(configFile);
+
+    double value[6];
+
+    std::vector<double> temp;
+
+    for (YAML::const_iterator it = config.begin(); it != config.end(); ++it)
+	{
+		// take first key and save it to variable key
+		std::string key = it->first.as<std::string>();
+		//printf("%s\n", key);
+
+		if (key.compare("FTSensorConfiguration") == 0)
+		{
+			// Forces
+			temp = config[key]["Zero_readings"]["Forces"].as<std::vector<double> >();
+			
+			this->FTSensor_offset_force[0] = temp.at(0);
+			this->FTSensor_offset_force[1] = temp.at(1);
+			this->FTSensor_offset_force[2] = temp.at(2);
+
+			// Torques
+			temp = config[key]["Zero_readings"]["Torques"].as<std::vector<double> >();
+
+			this->FTSensor_offset_torque[0] = temp.at(0);
+			this->FTSensor_offset_torque[1] = temp.at(1);
+			this->FTSensor_offset_torque[2] = temp.at(2);
+
+			// init sensor reading (before first sensor msg arrives)
+			this->F_sensorReading.wrench.torque.z = this->FTSensor_offset_torque[2];
+			this->F_sensorReading.wrench.torque.y = this->FTSensor_offset_torque[1];
+			this->F_sensorReading.wrench.torque.x = this->FTSensor_offset_torque[0];
+			this->F_sensorReading.wrench.force.z  = this->FTSensor_offset_force[2];
+			this->F_sensorReading.wrench.force.y  = this->FTSensor_offset_force[1];
+			this->F_sensorReading.wrench.force.x  = this->FTSensor_offset_force[0];
+
+		}		 
+	}
+
+	
+
+}
+
 void FDCC::CalcForwardDynamics(SpatialVector Fc)
 {
-	// Init external forces
-	
-	// #1
-	//CalcBodySpatialJacobian(*this->model, this->Q, 6, this->Jacobian_matrix);
+	// 1. Init external forces
 
-	//MatrixNd G = MatrixNd::Zero(6, 6);
-	//CalcPointJacobian(*this->model, this->Q, 6, Vector3d(0., 0., 0.05), G);
-
-	//std::cout << "G: " << G << endl;
-	//std::cout << "G inverse: " << G.inverse() << endl;
-	//this->Tau = G*Fc;
-	//std::cout << this->Jacobian_matrix.completeOrthogonalDecomposition().pseudoInverse()*Fc << endl;
-	
-	//std::cout << "Tau: " << this->Tau.transpose() << endl;
-
-	//std::cout << "F_ctrl: " << Fc.transpose() << endl;
 	this->Fext[6] = Fc;
 
-
-	//std::cout << "Tau: " << this->Tau.transpose() << endl;
-
-	//Fext.push_back(Fc);
-
-	//this->model->gravity = Vector3d (0., 0., 0.);
-
-	// Calculate FrowardDynamics
+	// 2. Calculate Forward Dynamics
 	ForwardDynamics (*this->model, this->Q, this->QDot, this->Tau, this->QDDot, &Fext);
-	//ForwardDynamics (*this->model, this->Q, this->QDot, this->Tau, this->QDDot);
-	
 
-	// #2
-	//this->Fext[5] = Fc;
-	//ForwardDynamicsConstraintsDirect(*this->model, this->Q, this->QDot, this->Tau, this->CS, this->QDDot, &Fext);
-	//ForwardDynamicsConstraintsNullSpace(*this->model, this->Q, this->QDot, this->Tau, this->CS, this->QDDot, &Fext);
-
+	// 3. Integrate QDDot -> QDot -> Q
 	double temp_QDot, temp_Q;
 	// integrate
 	for (int i = 0; i < 6; i++)
-	{
-		
+	{		
 		temp_QDot 	= this->QDot(i) + this->QDDot(i)*this->delta_t;
 		temp_Q 		= this->Q(i) 	+ this->QDot(i)*this->delta_t;
 		
@@ -480,9 +508,6 @@ void FDCC::CalcForwardDynamics(SpatialVector Fc)
 			this->QDDot(i) = 0;
 			this->QDot(i) = 0;
 		}
-		
-		//this->QDot(i) 	= this->QDot(i) + this->QDDot(i)*this->delta_t;
-		//this->Q(i) 		= this->Q(i) 	+ this->QDot(i)*this->delta_t;
 	}
 
 	this->CheckJointLimits();
@@ -514,11 +539,6 @@ void FDCC::CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot)
 	this->E = Matrix3d::Zero();
 
 	this->E = CalcBodyWorldOrientation(*this->model, this->Q, 6);
-	//std::cout << "E6: " << this->E << endl;
-
-	//this->X(0) = tempE(0, 0);
-	//this->X(1) = tempE(1, 0);
-	//this->X(2) = tempE(2, 0);
 
 	this->X(0) = this->E(0, 0);
 	this->X(1) = this->E(0, 1);
@@ -528,12 +548,12 @@ void FDCC::CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot)
 	this->XDot = CalcPointVelocity6D(*this->model, this->Q, this->QDot, 6, base_position, false);
 	this->XDDot = CalcPointAcceleration6D(*this->model, this->Q, this->QDot, this->QDDot, 6, base_position, false);
 
-	std::cout << "X: " << this->X.transpose() << endl;
+	//std::cout << "X: " << this->X.transpose() << endl;
 	//std::cout << "XDot: " << this->XDot.transpose() << endl;
 	//std::cout << "XDDot: " << this->XDDot.transpose() << endl;
 }
 
-SpatialVector FDCC::ConvertImpedanceForceToSpatial(SpatialVector Fbase, VectorNd PointPosition)
+SpatialVector FDCC::ConvertImpedanceForceToSpatial(SpatialVector Fbase, SpatialVector PointPosition)
 {
 
 	// Convert torques and forces given in base coordinate system to SpatialForce in given PointPostion
@@ -546,14 +566,14 @@ SpatialVector FDCC::ConvertImpedanceForceToSpatial(SpatialVector Fbase, VectorNd
 	return Fbase; 
 }
 
-SpatialVector FDCC::ConvertSensorForceToSpatial(SpatialVector Fsensor, VectorNd PointPosition)
+SpatialVector FDCC::ConvertSensorForceToSpatial(SpatialVector Fsensor, SpatialVector PointPosition)
 {
-	SpatialVector Fbase = SpatialVector::Zero();
+	SpatialVector Fret = SpatialVector::Zero();
 
 	// Convert torques and forces given in tool coordinate system to base coordinate system
 	MatrixNd T = MatrixNd::Zero(6, 6);
-	Matrix3d Rx = Matrix3d::Zero();
-	Matrix3d temp = Matrix3d::Zero();
+	Matrix3d Rx = MatrixNd::Zero(3, 3);
+	Matrix3d temp = MatrixNd::Zero(3, 3);
 
 	// fill E matrix
 	for (int i = 0; i < 3; i++)
@@ -582,44 +602,18 @@ SpatialVector FDCC::ConvertSensorForceToSpatial(SpatialVector Fsensor, VectorNd 
 		}
 
 	// Spatial transform 
-	//std::cout << T << endl;
-
-	Fbase = T.inverse()*Fsensor;
+	Fret = T.inverse()*Fsensor;
 
 	//std::cout << "Fbase: " << Fbase.transpose() << endl;
 
-	Fbase(0) +=  -( Fbase(4)*PointPosition(5) - Fbase(5)*PointPosition(4));
-	Fbase(1) +=  -(-Fbase(3)*PointPosition(5) + Fbase(5)*PointPosition(3));
-	Fbase(2) +=  -( Fbase(3)*PointPosition(4) - Fbase(4)*PointPosition(3));
+	Fret(0) +=  -( Fret(4)*PointPosition(5) - Fret(5)*PointPosition(4));
+	Fret(1) +=  -(-Fret(3)*PointPosition(5) + Fret(5)*PointPosition(3));
+	Fret(2) +=  -( Fret(3)*PointPosition(4) - Fret(4)*PointPosition(3));
 
-	return Fbase; 
+	return Fret; 
 }
 
-void FDCC::SetInitCartesianState (SpatialVector X0, SpatialVector XDot0, SpatialVector XDDot0)
-{
-	this->X0 		= X0;
-	this->XDot0 	= XDot0;
-	this->XDDot0	= XDDot0;
-	return;
-}
 
-void FDCC::SetInitJointPoseState (VectorNd Q0, VectorNd QDot0, VectorNd QDDot0)
-{
-	this->Q0 		= Q0;
-	this->QDot0 	= QDot0;
-	this->QDDot0 	= QDDot0;
-	return;
-}
-
-void FDCC::SetDesiredToolPosition(SpatialVector X_desired)
-{
-	this->X_desired = X_desired;	
-}
-
-void FDCC::SetDesiredToolForce(SpatialVector F_desired)
-{
-	this->F_desired = F_desired;	
-}
 
 void FDCC::XDesiredCallback(const geometry_msgs::Pose &msg)
 {
@@ -659,6 +653,48 @@ void FDCC::ForceSensorCallback (const geometry_msgs::WrenchStamped &msg)
 {
 	//std::cout << "msg: " << msg << endl;
 	this->F_sensorReading = msg;
+}
+
+void FDCC::JointStateCallback (const sensor_msgs::JointState &msg)
+{
+	if (this->InitJointStatesLoaded == false)
+	{
+		// Set init Q
+		this->Q(0) = msg.position[0];
+		this->Q(1) = msg.position[1];
+		this->Q(2) = msg.position[2];
+		this->Q(3) = msg.position[3];
+		this->Q(4) = msg.position[4];
+		this->Q(5) = msg.position[5];
+
+		// Set init X
+		this->CalcForwardKinematics(this->Q, this->QDot, this->QDDot);
+
+		// Set init X_desired = X
+		this->X_desired = this->X;
+
+		ROS_INFO("Init Joint States Loaded!");
+		// set flag to true
+		this->InitJointStatesLoaded = true;
+
+	}
+	
+}
+
+void FDCC::DesiredForceCallback 	(const fdcc::FDCCForceCommandMsg &msg)
+{
+
+	this->F_desired_tool(0) = msg.torque_x;
+	this->F_desired_tool(1) = msg.torque_y;
+	this->F_desired_tool(2) = msg.torque_z;
+
+	this->F_desired_tool(3) = msg.force_x;
+	this->F_desired_tool(4) = msg.force_y;
+	this->F_desired_tool(5) = msg.force_z;
+
+
+
+	return;
 }
 
 SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired)
@@ -728,60 +764,57 @@ void FDCC::ControlLoop(void)
 		//after calling this function ROS will processes our callbacks
         ros::spinOnce();
 
-		// Forward kinematics
-		this->CalcForwardKinematics(this->Q, this->QDot, this->QDDot);
+        if (this->InitJointStatesLoaded)
+        {
+	        	// START control loop
+			// 1. Forward kinematics
+			this->CalcForwardKinematics(this->Q, this->QDot, this->QDDot);
 
-		// Impedance Control
-		F_imp = this->ImpedanceControl(this->X_desired);
+			// 2. Impedance Control
+			F_imp = this->ImpedanceControl(this->X_desired);
 
+			// 3. Sensor Reading
+			// Prepare Sensor Data
+			this->F_sensor(0) =  (this->F_sensorReading.wrench.torque.z - this->FTSensor_offset_torque[2]) * 2.0;
+			this->F_sensor(1) =  (this->F_sensorReading.wrench.torque.y - this->FTSensor_offset_torque[1]) * 2.0;
+			this->F_sensor(2) = -(this->F_sensorReading.wrench.torque.x - this->FTSensor_offset_torque[0]) * 2.0;		
+			this->F_sensor(3) =  (this->F_sensorReading.wrench.force.z - this->FTSensor_offset_force[2]) / 10.0;
+			this->F_sensor(4) =  (this->F_sensorReading.wrench.force.y - this->FTSensor_offset_force[1]) / 10.0;
+			this->F_sensor(5) = -(this->F_sensorReading.wrench.force.x - this->FTSensor_offset_force[0]) / 10.0;
+			
+			this->F_sensor = this->ConvertSensorForceToSpatial(this->F_sensor, this->X);
+			this->F_desired_base = this->ConvertSensorForceToSpatial(this->F_desired_tool, this->X);
+			
+			// 4. Calculate Fnet
+			F_net = F_imp + this->F_desired_base + this->F_sensor;
+			
 
-		// Prepare Sensor Data
-		this->F_sensor(0) = (this->F_sensorReading.wrench.torque.z-0.097)*2.0;
-		this->F_sensor(1) = (this->F_sensorReading.wrench.torque.y-0.471)*2.0;
-		this->F_sensor(2) = -(this->F_sensorReading.wrench.torque.x+0.718)*2.0;		
-		this->F_sensor(3) = (this->F_sensorReading.wrench.force.z+46.2)/10.0;
-		this->F_sensor(4) = (this->F_sensorReading.wrench.force.y-3.1)/10.0;
-		this->F_sensor(5) = -(this->F_sensorReading.wrench.force.x-1.6)/10.0;
-		//std::cout << "F_sensor: " << this->F_sensor.transpose() << endl;
-		this->F_sensor = this->ConvertSensorForceToSpatial(this->F_sensor, this->X);
+			// Calculate F_ctrl
+			F_ctrl(0) = (double) (1.0*this->PD_ctrl[0]->compute(F_net(0)));
+			F_ctrl(1) = (double) (1.0*this->PD_ctrl[1]->compute(F_net(1)));
+			F_ctrl(2) = (double) (1.0*this->PD_ctrl[2]->compute(F_net(2)));
+			F_ctrl(3) = (double) (1.0*this->PD_ctrl[3]->compute(F_net(3)));
+			F_ctrl(4) = (double) (1.0*this->PD_ctrl[4]->compute(F_net(4)));
+			F_ctrl(5) = (double) (1.0*this->PD_ctrl[5]->compute(F_net(5)));
 
-		//std::cout << "F_sensor spatial: " << this->F_sensor.transpose() << endl;
+			// 5. Forward Dynamics including integration
+			
+			this->CalcForwardDynamics(F_ctrl);
 
-		// Calculate Fnet
-		F_net = F_imp + this->F_desired + this->F_sensor;
-		//F_net = SpatialVector::Zero(6);
-		//std::cout << "F_net: " << F_net.transpose() << endl;
+			// 6. Move robot
+			this->createRobotTrajectoryMsg();
+			//this->CreateJointStatesMsg();
+			this->CreateFDCCStateMsg();
 
-		// Calculate F_ctrl
-		F_ctrl(0) = (double) (1.0*this->PD_ctrl[0]->compute(F_net(0)));
-		F_ctrl(1) = (double) (1.0*this->PD_ctrl[1]->compute(F_net(1)));
-		F_ctrl(2) = (double) (1.0*this->PD_ctrl[2]->compute(F_net(2)));
-		F_ctrl(3) = (double) (1.0*this->PD_ctrl[3]->compute(F_net(3)));
-		F_ctrl(4) = (double) (1.0*this->PD_ctrl[4]->compute(F_net(4)));
-		F_ctrl(5) = (double) (1.0*this->PD_ctrl[5]->compute(F_net(5)));
+			// END of control loop
 
-		//std::cout << "F_ctrl: " << F_ctrl.transpose() << endl;
-
-		//F_ctrl = SpatialVector(0.0, -0.02*this->X(5), 0.0, -0.02, 0.0, 0.0);
-		//F_ctrl = SpatialVector(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
-		
-
-		// Forward Dynamics including integration
-		
-		this->CalcForwardDynamics(F_ctrl);
-
-		std::cout << "Q: " << this->Q.transpose() << endl;
-		//std::cout << "QDot: " << this->QDot.transpose() << endl;		
-		//std::cout << "QDDot: " << this->QDDot.transpose() << endl;
-
-		// Move robot
-		//this->F_sensor = SpatialVector(0., 0., 0., 0., 0., 0.);
-
-		this->createRobotTrajectoryMsg();
-		//this->CreateJointStatesMsg();
-		this->CreateFDCCStateMsg();
-
-		//std::cout << "End of control loop."<< endl;
+        }
+        else
+        {
+        	// Joint states still not loaded
+        	ROS_INFO("Robot Joint States still not loaded!");
+        }
+        
 		r.sleep();
 		ros::spinOnce(); 
 	}
@@ -850,38 +883,6 @@ double FDCC::GetDeltaT (void)
 	return this->delta_t;
 }
 
-void FDCC::CreateJointStatesMsg(void)
-{
-	sensor_msgs::JointState return_value;
-
-	std_msgs::Header h;
-	h.stamp = ros::Time::now();
-
-	return_value.header.stamp = h.stamp;
-
-	return_value.name.push_back("joint_a1");
-	return_value.name.push_back("joint_a2");
-	return_value.name.push_back("joint_a3");
-	return_value.name.push_back("joint_a4");
-	return_value.name.push_back("joint_a5");
-	return_value.name.push_back("joint_a6");
-
-	return_value.position.push_back(this->Q(0));
-	return_value.position.push_back(this->Q(1));
-	return_value.position.push_back(this->Q(2));
-	return_value.position.push_back(this->Q(3));
-	return_value.position.push_back(this->Q(4));
-	return_value.position.push_back(this->Q(5));
-
-	return_value.velocity.push_back(this->QDot(0));
-	return_value.velocity.push_back(this->QDot(1));
-	return_value.velocity.push_back(this->QDot(2));
-	return_value.velocity.push_back(this->QDot(3));
-	return_value.velocity.push_back(this->QDot(4));
-	return_value.velocity.push_back(this->QDot(5));
-		
-	this->kuka_kr10_joint_state_emulator_pub.publish(return_value);
-}
 
 void FDCC::createRobotTrajectoryMsg( void )
 {
@@ -971,45 +972,24 @@ void FDCC::CreateFDCCStateMsg(void)
 	msg2pub.joint_velocity.push_back(this->QDot(4));
 	msg2pub.joint_velocity.push_back(this->QDot(5));
 
-	msg2pub.cartesian_position.push_back(this->X(0));
-	msg2pub.cartesian_position.push_back(this->X(1));
-	msg2pub.cartesian_position.push_back(this->X(2));
-	msg2pub.cartesian_position.push_back(this->X(3));
-	msg2pub.cartesian_position.push_back(this->X(4));
-	msg2pub.cartesian_position.push_back(this->X(5));
+	// make quaternion and publish it in cartesian_position
+	double qw, qx, qy, qz;
+
+	qw = sqrt(1 + this->E.transpose()(0, 0) + this->E.transpose()(1, 1) + this->E.transpose()(2, 2))/2;
+	qx = (this->E.transpose()(2, 1) - this->E.transpose()(1, 2)) / (4*qw);
+	qy = (this->E.transpose()(0, 2) - this->E.transpose()(2, 0)) / (4*qw);
+	qz = (this->E.transpose()(1, 0) - this->E.transpose()(0, 1)) / (4*qw);
+
+	msg2pub.cartesian_position.push_back(this->X_desired(3));
+	msg2pub.cartesian_position.push_back(this->X_desired(4));
+	msg2pub.cartesian_position.push_back(this->X_desired(5));
+	msg2pub.cartesian_position.push_back(qx);
+	msg2pub.cartesian_position.push_back(qy);
+	msg2pub.cartesian_position.push_back(qz);
+	msg2pub.cartesian_position.push_back(qw);
+
 
 	this->fdcc_state_pub.publish(msg2pub);
 
 }
 
-void FDCC::testing(void)
-{
-	/*
-	VectorNd Q = VectorNd::Zero (this->model->dof_count);
-	VectorNd QDot = VectorNd::Zero (this->model->dof_count);
-	VectorNd Tau = VectorNd::Zero (this->model->dof_count);
-	VectorNd QDDot = VectorNd::Zero (this->model->dof_count);
-
-	std::vector<Math::SpatialVector> Fext;
-
-	Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
-	Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
-	Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
-	Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
-	Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
-	Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
-
-	//std::cout << "Fext: " << Fext << endl;
-	
-	std::cout << "Q: " << Q.transpose() << endl;
-	std::cout << "QDot: " << QDot.transpose() << endl;
-	std::cout << "Tau: " << Tau.transpose() << endl;
-	std::cout << "QDDot: " << QDDot.transpose() << endl;
-	
-	//ForwardDynamics (*this->model, Q, QDot, Tau, QDDot, &Fext);
-	//std::cout << QDDot.transpose() << std::endl;
-	*/
-
-	
-
-}
