@@ -775,15 +775,19 @@ void FDCC::ControlLoop(void)
 
 			// 3. Sensor Reading
 			// Prepare Sensor Data
-			this->F_sensor(0) =  (this->F_sensorReading.wrench.torque.z - this->FTSensor_offset_torque[2]) * 2.0;
-			this->F_sensor(1) =  (this->F_sensorReading.wrench.torque.y - this->FTSensor_offset_torque[1]) * 2.0;
-			this->F_sensor(2) = -(this->F_sensorReading.wrench.torque.x - this->FTSensor_offset_torque[0]) * 2.0;		
-			this->F_sensor(3) =  (this->F_sensorReading.wrench.force.z - this->FTSensor_offset_force[2]) / 10.0;
-			this->F_sensor(4) =  (this->F_sensorReading.wrench.force.y - this->FTSensor_offset_force[1]) / 10.0;
-			this->F_sensor(5) = -(this->F_sensorReading.wrench.force.x - this->FTSensor_offset_force[0]) / 10.0;
+			this->F_sensor(0) =  (this->F_sensorReading.wrench.torque.z - this->FTSensor_offset_torque[2])*2;
+			this->F_sensor(1) =  (this->F_sensorReading.wrench.torque.y - this->FTSensor_offset_torque[1])*2;
+			this->F_sensor(2) = -(this->F_sensorReading.wrench.torque.x - this->FTSensor_offset_torque[0])*2;		
+			this->F_sensor(3) =  (this->F_sensorReading.wrench.force.z - this->FTSensor_offset_force[2])/10.0;
+			this->F_sensor(4) =  (this->F_sensorReading.wrench.force.y - this->FTSensor_offset_force[1])/10.0;
+			this->F_sensor(5) = -(this->F_sensorReading.wrench.force.x - this->FTSensor_offset_force[0])/10.0;
+
+			//std::cout << "F_sensor tool: " << this->F_sensor.transpose() << endl;
 			
 			this->F_sensor = this->ConvertSensorForceToSpatial(this->F_sensor, this->X);
 			this->F_desired_base = this->ConvertSensorForceToSpatial(this->F_desired_tool, this->X);
+
+			//std::cout << "F_sensor base: " << this->F_sensor.transpose() << endl;
 			
 			// 4. Calculate Fnet
 			F_net = F_imp + this->F_desired_base + this->F_sensor;
@@ -906,7 +910,7 @@ void FDCC::createRobotTrajectoryMsg( void )
 	point_current.positions.push_back(this->Q(3));
 	point_current.positions.push_back(this->Q(4));
 	point_current.positions.push_back(this->Q(5));
-/*
+
 	point_current.velocities.push_back(this->QDot(0));
 	point_current.velocities.push_back(this->QDot(1));
 	point_current.velocities.push_back(this->QDot(2));
@@ -920,22 +924,22 @@ void FDCC::createRobotTrajectoryMsg( void )
 	point_current.accelerations.push_back(this->QDDot(3));
 	point_current.accelerations.push_back(this->QDDot(4));
 	point_current.accelerations.push_back(this->QDDot(5));
+/*
+	point_current.velocities.push_back(0);
+	point_current.velocities.push_back(0);
+	point_current.velocities.push_back(0);
+	point_current.velocities.push_back(0);
+	point_current.velocities.push_back(0);
+	point_current.velocities.push_back(0);
+
+	point_current.accelerations.push_back(0);
+	point_current.accelerations.push_back(0);
+	point_current.accelerations.push_back(0);
+	point_current.accelerations.push_back(0);
+	point_current.accelerations.push_back(0);
+	point_current.accelerations.push_back(0);
 */
-	point_current.velocities.push_back(0);
-	point_current.velocities.push_back(0);
-	point_current.velocities.push_back(0);
-	point_current.velocities.push_back(0);
-	point_current.velocities.push_back(0);
-	point_current.velocities.push_back(0);
-
-	point_current.accelerations.push_back(0);
-	point_current.accelerations.push_back(0);
-	point_current.accelerations.push_back(0);
-	point_current.accelerations.push_back(0);
-	point_current.accelerations.push_back(0);
-	point_current.accelerations.push_back(0);
-
-	point_current.time_from_start = ros::Duration(0.015);
+	point_current.time_from_start = ros::Duration(0.0001); // zasto nije nula?
 
 	return_value.goal.trajectory.points.push_back(point_current);
 

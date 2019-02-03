@@ -22,7 +22,7 @@ class loadPath():
 
 	def loadFromFile(self):
 		
-		with open('/home/bmaric/kuka_ws/src/FDCC/scripts/DOORS_trajektorije.txt') as inputfile:
+		with open('/home/bmaric/kuka_ws/src/FDCC/scripts/dentlerPP.txt') as inputfile:
 			for row in csv.reader(inputfile, delimiter=' '):
 				self.results.append(row)
 
@@ -31,6 +31,7 @@ class loadPath():
 
 				tmp_pose.header.stamp=rospy.Time.now()
 				tmp_pose.header.frame_id='base'
+				'''
 				tmp_pose.pose.position.x = float(row[0])
 				tmp_pose.pose.position.y = float(row[1])
 				tmp_pose.pose.position.z = float(row[2]) + 0.3
@@ -39,6 +40,16 @@ class loadPath():
 				tmp_pose.pose.orientation.y =  float(row[6])  # w
 				tmp_pose.pose.orientation.z =  float(row[3])  # x
 				tmp_pose.pose.orientation.w = -float(row[4])  #-y
+				'''
+
+				tmp_pose.pose.position.x = float(row[0])-0.8
+				tmp_pose.pose.position.y = float(row[1])
+				tmp_pose.pose.position.z = float(row[2])-0.5
+
+				tmp_pose.pose.orientation.x = float(row[3])
+				tmp_pose.pose.orientation.y = float(row[4])
+				tmp_pose.pose.orientation.z = float(row[5])
+				tmp_pose.pose.orientation.w = float(row[6])
 
 				self.poses.append(tmp_pose)
 
@@ -51,7 +62,7 @@ class loadPath():
 			tmp_pose.header.stamp = rospy.Time.now()
 			self.pathPub.publish(tmp_pose)
 			self.desiredXPub.publish(tmp_pose.pose)
-			rospy.sleep(0.1)
+			rospy.sleep(0.05)
 
 
 
