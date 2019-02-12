@@ -22,6 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
 add_message_files(
   FILES
   fdcc_state.msg
+  fdcc_forces.msg
   FDCCForceCommandMsg.msg
 )
 

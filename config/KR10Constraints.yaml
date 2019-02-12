@@ -1,0 +1,28 @@
+KR10_constraints:
+  joint_position:
+    joint_a1_min: -170.0
+    joint_a1_max: 170.0
+    joint_a2_min: -190.0
+    joint_a2_max: 45.0
+    joint_a3_min: -120.0
+    joint_a3_max: 156.0
+    joint_a4_min: -185.0
+    joint_a4_max: 185.0
+    joint_a5_min: -120.0
+    joint_a5_max: 120.0
+    joint_a6_min: -350.0
+    joint_a6_max: 350.0
+  joint_velocity:
+    joint_a1: 150
+    joint_a2: 110
+    joint_a3: 110
+    joint_a4: 160
+    joint_a5: 150
+    joint_a6: 240
+  joint_acceleration:
+    joint_a1: 10.0
+    joint_a2: 10.0
+    joint_a3: 10.0
+    joint_a4: 10.0
+    joint_a5: 10.0
+    joint_a6: 10.0

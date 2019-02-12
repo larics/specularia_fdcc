@@ -5,6 +5,7 @@ import csv
 from geometry_msgs.msg import Pose
 from geometry_msgs.msg import PoseStamped
 from geometry_msgs.msg import Quaternion
+from fdcc.msg import *
 
 
 
@@ -12,17 +13,22 @@ class loadPath():
 	def __init__(self):
 		self.pathPub = rospy.Publisher('/path_pose', PoseStamped, queue_size=10)
 		self.desiredXPub = rospy.Publisher('/pose_desired', Pose, queue_size=10)
+
+
 		
 		self.results = []
 		self.poses = []
+
+		self.FDCCState = fdcc_state()
 
 		self.rotQuaternion = Quaternion()
 		self.rotQuaternion.y = 1
 
 
+
 	def loadFromFile(self):
 		
-		with open('/home/bmaric/kuka_ws/src/FDCC/scripts/dentlerPP.txt') as inputfile:
+		with open('/home/bmaric/kuka_ws/src/FDCC/scripts/DOORS_trajektorije.txt') as inputfile:
 			for row in csv.reader(inputfile, delimiter=' '):
 				self.results.append(row)
 
@@ -31,8 +37,8 @@ class loadPath():
 
 				tmp_pose.header.stamp=rospy.Time.now()
 				tmp_pose.header.frame_id='base'
-				'''
-				tmp_pose.pose.position.x = float(row[0])
+				
+				tmp_pose.pose.position.x = float(row[0])+0.1
 				tmp_pose.pose.position.y = float(row[1])
 				tmp_pose.pose.position.z = float(row[2]) + 0.3
 
@@ -44,13 +50,13 @@ class loadPath():
 
 				tmp_pose.pose.position.x = float(row[0])-0.8
 				tmp_pose.pose.position.y = float(row[1])
-				tmp_pose.pose.position.z = float(row[2])-0.5
+				tmp_pose.pose.position.z = float(row[2])-0.15
 
-				tmp_pose.pose.orientation.x = float(row[3])
-				tmp_pose.pose.orientation.y = float(row[4])
-				tmp_pose.pose.orientation.z = float(row[5])
-				tmp_pose.pose.orientation.w = float(row[6])
-
+				tmp_pose.pose.orientation.x = float(row[6])
+				tmp_pose.pose.orientation.y = float(row[5])
+				tmp_pose.pose.orientation.z = -float(row[4])
+				tmp_pose.pose.orientation.w = -float(row[3])
+				'''
 				self.poses.append(tmp_pose)
 
 

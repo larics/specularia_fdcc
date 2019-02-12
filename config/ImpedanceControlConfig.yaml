@@ -22,4 +22,17 @@ ImpedanceControlConfiguration:
     row3: [000.0, 000.0, 000.0, 0.400, 000.0, 000.0]
     row4: [000.0, 000.0, 000.0, 000.0, 0.400, 000.0]
     row5: [000.0, 000.0, 000.0, 000.0, 000.0, 0.400]
-   
+
+  limits:
+    limit_t1_min: -3.0
+    limit_t1_max: 3.0
+    limit_t2_min: -3.0
+    limit_t2_max: 3.0
+    limit_t3_min: -3.0
+    limit_t3_max: 3.0
+    limit_f1_min: -10
+    limit_f1_max: 10
+    limit_f2_min: -10
+    limit_f2_max: 10
+    limit_f3_min: -10
+    limit_f3_max: 10

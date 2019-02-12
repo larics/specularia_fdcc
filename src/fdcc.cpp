@@ -45,35 +45,23 @@ FDCC::FDCC()
 	// load Force/Torque sensor configuration
 	this->loadFTSensorParams();
 
+	// load Robot Constraints
+	this->loadRobotConstraints();
+
 	// init publishers
 	//this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/position_trajectory_controller/follow_joint_trajectory/goal", 1);
 	this->kuka_kr10_joints_pub = n.advertise<control_msgs::FollowJointTrajectoryActionGoal>("/joint_trajectory_action/goal", 1);
-	
-	this->fdcc_state_pub = n.advertise<fdcc::fdcc_state>("/fdcc_state", 1);
+	this->kuka_kr10_joint_trajectory_pub = n.advertise<trajectory_msgs::JointTrajectory>("/position_trajectory_controller/command", 1);
+	this->fdcc_state_pub = n.advertise<fdcc::fdcc_state>("/fdcc/state", 1);
+	this->fdcc_force_pub = n.advertise<fdcc::fdcc_forces>("/fdcc/forces", 1);
 
 
 	// init subscribers
 	this->XDesiredSub = n.subscribe("/pose_desired", 1, &FDCC::XDesiredCallback, this);
-	this->ForceSensorSub = n.subscribe("/optoforce_node/OptoForceWrench", 1, &FDCC::ForceSensorCallback, this);
+	this->ForceSensorSub = n.subscribe("/optoforce_node/OptoForceWrench_filtered", 1, &FDCC::ForceSensorCallback, this);
 	this->JointStateSub = n.subscribe("/joint_states", 1, &FDCC::JointStateCallback, this);
 	this->DesiredForceSub = n.subscribe("/fdcc/desired_force", 1, &FDCC::DesiredForceCallback, this);
 
-
-	// run()
-
-	// joint limits !! modify this to load from YAML
-	this->joint_limit_min[0] = DEG2RAD * (-170.0);
-	this->joint_limit_max[0] = DEG2RAD * ( 170);
-	this->joint_limit_min[1] = DEG2RAD * (-190.0);
-	this->joint_limit_max[1] = DEG2RAD * ( 45);
-	this->joint_limit_min[2] = DEG2RAD * (-120.0);
-	this->joint_limit_max[2] = DEG2RAD * ( 156);
-	this->joint_limit_min[3] = DEG2RAD * (-185.0);
-	this->joint_limit_max[3] = DEG2RAD * ( 185);
-	this->joint_limit_min[4] = DEG2RAD * (-120.0);
-	this->joint_limit_max[4] = DEG2RAD * ( 120);
-	this->joint_limit_min[5] = DEG2RAD * (-350.0);
-	this->joint_limit_max[5] = DEG2RAD * ( 350);
 
 }
 
@@ -151,6 +139,13 @@ void FDCC::loadURDF(const char * filename)
 	this->Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
 	this->Fext.push_back(SpatialVector(0., 0., 0., 0., 0., 0.));
 	
+	this->Fsp 			= SpatialVector::Zero(6);
+	this->Fd 			= SpatialVector::Zero(6);
+	this->Fcollinear 	= SpatialVector::Zero(6);
+
+	this->Msp 			= SpatialVector::Zero(6);
+	this->Md 			= SpatialVector::Zero(6);
+	this->Mcollinear 	= SpatialVector::Zero(6);
 
 
 	this->Jacobian_matrix = MatrixNd::Zero(6, 6);
@@ -345,6 +340,22 @@ void FDCC::loadImpedanceParams(void)
 			this->Imp_I(5, 3) = temp.at(3);
 			this->Imp_I(5, 4) = temp.at(4);
 			this->Imp_I(5, 5) = temp.at(5);
+
+			
+			this->Imp_limit_t1_min = config[key]["limits"]["limit_t1_min"].as<double>();
+			this->Imp_limit_t1_max = config[key]["limits"]["limit_t1_max"].as<double>();
+			this->Imp_limit_t2_min = config[key]["limits"]["limit_t2_min"].as<double>();
+			this->Imp_limit_t2_max = config[key]["limits"]["limit_t2_max"].as<double>();
+			this->Imp_limit_t3_min = config[key]["limits"]["limit_t3_min"].as<double>();
+			this->Imp_limit_t3_max = config[key]["limits"]["limit_t3_max"].as<double>();
+
+			this->Imp_limit_f1_min = config[key]["limits"]["limit_f1_min"].as<double>();
+			this->Imp_limit_f1_max = config[key]["limits"]["limit_f1_max"].as<double>();
+			this->Imp_limit_f2_min = config[key]["limits"]["limit_f2_min"].as<double>();
+			this->Imp_limit_f2_max = config[key]["limits"]["limit_f2_max"].as<double>();
+			this->Imp_limit_f3_min = config[key]["limits"]["limit_f3_min"].as<double>();
+			this->Imp_limit_f3_max = config[key]["limits"]["limit_f3_max"].as<double>();
+			
 		}		 
 	}
 }
@@ -387,6 +398,20 @@ void FDCC::loadPDParams(void)
 			this->ForcePD_Kd[3] = config[key]["Kd"]["spatial3"].as<double>();
 			this->ForcePD_Kd[4] = config[key]["Kd"]["spatial4"].as<double>();
 			this->ForcePD_Kd[5] = config[key]["Kd"]["spatial5"].as<double>();
+
+			this->PD_limit_t1_min = config[key]["limits"]["limit_t1_min"].as<double>();
+			this->PD_limit_t1_max = config[key]["limits"]["limit_t1_max"].as<double>();
+			this->PD_limit_t2_min = config[key]["limits"]["limit_t2_min"].as<double>();
+			this->PD_limit_t2_max = config[key]["limits"]["limit_t2_max"].as<double>();
+			this->PD_limit_t3_min = config[key]["limits"]["limit_t3_min"].as<double>();
+			this->PD_limit_t3_max = config[key]["limits"]["limit_t3_max"].as<double>();
+
+			this->PD_limit_f1_min = config[key]["limits"]["limit_f1_min"].as<double>();
+			this->PD_limit_f1_max = config[key]["limits"]["limit_f1_max"].as<double>();
+			this->PD_limit_f2_min = config[key]["limits"]["limit_f2_min"].as<double>();
+			this->PD_limit_f2_max = config[key]["limits"]["limit_f2_max"].as<double>();
+			this->PD_limit_f3_min = config[key]["limits"]["limit_f3_min"].as<double>();
+			this->PD_limit_f3_max = config[key]["limits"]["limit_f3_max"].as<double>();
 		}		 
 	}
 
@@ -424,6 +449,21 @@ void FDCC::loadPDParams(void)
 	this->PD_ctrl[5]->setTdMax(t_max);
 	this->PD_ctrl[5]->setKp(this->ForcePD_Kp[5]);
 	this->PD_ctrl[5]->setKd(this->ForcePD_Kd[5]);
+
+	// Set limits
+	this->PD_ctrl[0]->setUMin(this->PD_limit_t1_min);
+	this->PD_ctrl[0]->setUMax(this->PD_limit_t1_max);	
+	this->PD_ctrl[1]->setUMin(this->PD_limit_t2_min);
+	this->PD_ctrl[1]->setUMax(this->PD_limit_t2_max);
+	this->PD_ctrl[2]->setUMin(this->PD_limit_t3_min);
+	this->PD_ctrl[2]->setUMax(this->PD_limit_t3_max);
+
+	this->PD_ctrl[3]->setUMin(this->PD_limit_f1_min);
+	this->PD_ctrl[3]->setUMax(this->PD_limit_f1_max);
+	this->PD_ctrl[4]->setUMin(this->PD_limit_f2_min);
+	this->PD_ctrl[4]->setUMax(this->PD_limit_f2_max);
+	this->PD_ctrl[5]->setUMin(this->PD_limit_f3_min);
+	this->PD_ctrl[5]->setUMax(this->PD_limit_f3_max);
 }
 
 void FDCC::loadFTSensorParams(void)
@@ -475,8 +515,81 @@ void FDCC::loadFTSensorParams(void)
 
 		}		 
 	}
+}
 
-	
+void FDCC::loadRobotConstraints	(void)
+{
+ros::NodeHandle private_node_handle_("~");
+	std::string configFile;
+	std::string path = ros::package::getPath("fdcc");
+
+    //getting ros params
+    private_node_handle_.param("config_file", configFile, path + std::string("/config/KR10Constraints.yaml"));
+
+    // Open file
+    YAML::Node config = YAML::LoadFile(configFile);
+
+    double value[6];
+
+    std::vector<double> temp;
+
+    for (YAML::const_iterator it = config.begin(); it != config.end(); ++it)
+	{
+		// take first key and save it to variable key
+		std::string key = it->first.as<std::string>();
+		//printf("%s\n", key);
+
+		if (key.compare("KR10_constraints") == 0)
+		{
+			// Joint position limits	
+			// joint_a1
+			this->joint_limit_position_min[0] = config[key]["joint_position"]["joint_a1_min"].as<double>();
+			this->joint_limit_position_max[0] = config[key]["joint_position"]["joint_a1_max"].as<double>();
+			// joint_a2
+			this->joint_limit_position_min[1] = config[key]["joint_position"]["joint_a2_min"].as<double>();
+			this->joint_limit_position_max[1] = config[key]["joint_position"]["joint_a2_max"].as<double>();
+			// joint_a3
+			this->joint_limit_position_min[2] = config[key]["joint_position"]["joint_a3_min"].as<double>();
+			this->joint_limit_position_max[2] = config[key]["joint_position"]["joint_a3_max"].as<double>();
+			// joint_a4
+			this->joint_limit_position_min[3] = config[key]["joint_position"]["joint_a4_min"].as<double>();
+			this->joint_limit_position_max[3] = config[key]["joint_position"]["joint_a4_max"].as<double>();
+			// joint_a5
+			this->joint_limit_position_min[4] = config[key]["joint_position"]["joint_a5_min"].as<double>();
+			this->joint_limit_position_max[4] = config[key]["joint_position"]["joint_a5_max"].as<double>();
+			// joint_a6
+			this->joint_limit_position_min[5] = config[key]["joint_position"]["joint_a6_min"].as<double>();
+			this->joint_limit_position_max[5] = config[key]["joint_position"]["joint_a6_max"].as<double>();
+			
+			// Joint velocity limits
+			// joint_a1
+			this->joint_limit_velocity[0] = config[key]["joint_velocity"]["joint_a1"].as<double>();
+			// joint_a2
+			this->joint_limit_velocity[1] = config[key]["joint_velocity"]["joint_a2"].as<double>();
+			// joint_a3
+			this->joint_limit_velocity[2] = config[key]["joint_velocity"]["joint_a3"].as<double>();
+			// joint_a4
+			this->joint_limit_velocity[3] = config[key]["joint_velocity"]["joint_a4"].as<double>();
+			// joint_a5
+			this->joint_limit_velocity[4] = config[key]["joint_velocity"]["joint_a5"].as<double>();
+			// joint_a6
+			this->joint_limit_velocity[5] = config[key]["joint_velocity"]["joint_a6"].as<double>();
+
+			// Joint acceleration limits
+			// joint_a1
+			this->joint_limit_acceleration[0] = config[key]["joint_acceleration"]["joint_a1"].as<double>();
+			// joint_a2
+			this->joint_limit_acceleration[1] = config[key]["joint_acceleration"]["joint_a2"].as<double>();
+			// joint_a3
+			this->joint_limit_acceleration[2] = config[key]["joint_acceleration"]["joint_a3"].as<double>();
+			// joint_a4
+			this->joint_limit_acceleration[3] = config[key]["joint_acceleration"]["joint_a4"].as<double>();
+			// joint_a5
+			this->joint_limit_acceleration[4] = config[key]["joint_acceleration"]["joint_a5"].as<double>();
+			// joint_a6
+			this->joint_limit_acceleration[5] = config[key]["joint_acceleration"]["joint_a6"].as<double>();
+		}		 
+	}
 
 }
 
@@ -490,28 +603,53 @@ void FDCC::CalcForwardDynamics(SpatialVector Fc)
 	ForwardDynamics (*this->model, this->Q, this->QDot, this->Tau, this->QDDot, &Fext);
 
 	// 3. Integrate QDDot -> QDot -> Q
-	double temp_QDot, temp_Q;
 	// integrate
 	for (int i = 0; i < 6; i++)
 	{		
-		temp_QDot 	= this->QDot(i) + this->QDDot(i)*this->delta_t;
-		temp_Q 		= this->Q(i) 	+ this->QDot(i)*this->delta_t;
-		
-		// check joint limit
-		if (temp_Q > this->joint_limit_min[i] && temp_Q < this->joint_limit_max[i])
+		// check joint acceleration limit;
+		if (this->QDDot(i) > this->joint_limit_acceleration[i])
 		{
-			this->QDot(i) = temp_QDot;
-			this->Q(i) = temp_Q;
+			this->QDDot(i) = this->joint_limit_acceleration[i];
 		}
-		else
+		else if (this->QDDot(i) < -1*this->joint_limit_acceleration[i])
 		{
-			this->QDDot(i) = 0;
-			this->QDot(i) = 0;
+			this->QDDot(i) = -1*this->joint_limit_acceleration[i];
 		}
+
+		// integrate acceleration
+		this->QDot(i) = this->QDot(i) + this->QDDot(i)*this->delta_t;
+
+		// check joint velocity limit;
+		if (this->QDot(i) > this->joint_limit_velocity[i]*DEG2RAD)
+		{
+			this->QDot(i) 	= this->joint_limit_velocity[i]*DEG2RAD;
+			this->QDDot(i) 	= 0;
+		}
+		else if (this->QDot(i) < -1*this->joint_limit_velocity[i]*DEG2RAD)
+		{
+			this->QDot(i) = -1*this->joint_limit_velocity[i]*DEG2RAD;
+			this->QDDot(i) 	= 0;
+		}
+
+		// integrate velocity
+		this->Q(i) = this->Q(i) + this->QDot(i)*this->delta_t;
+
+		// check joint velocity limit;
+		if (this->Q(i) > this->joint_limit_position_max[i]*DEG2RAD)
+		{
+			this->Q(i) = this->joint_limit_position_max[i]*DEG2RAD;
+			this->QDDot(i) 	= 0;
+			this->QDot(i)	= 0;
+		}
+		else if (this->Q(i) < this->joint_limit_position_min[i]*DEG2RAD)
+		{
+			this->Q(i) = this->joint_limit_position_min[i]*DEG2RAD;
+			this->QDDot(i) 	= 0;
+			this->QDot(i)	= 0;
+		}
+
 	}
 
-	this->CheckJointLimits();
-	
 }
 
 void FDCC::CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot)
@@ -555,14 +693,12 @@ void FDCC::CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot)
 
 SpatialVector FDCC::ConvertImpedanceForceToSpatial(SpatialVector Fbase, SpatialVector PointPosition)
 {
-
-	// Convert torques and forces given in base coordinate system to SpatialForce in given PointPostion
-
 	// Spatial transform addon translation
+	/*
 	Fbase(0) +=  -( Fbase(4)*PointPosition(5) - Fbase(5)*PointPosition(4));
 	Fbase(1) +=  -(-Fbase(3)*PointPosition(5) + Fbase(5)*PointPosition(3));
 	Fbase(2) +=  -( Fbase(3)*PointPosition(4) - Fbase(4)*PointPosition(3));
-
+	*/
 	return Fbase; 
 }
 
@@ -613,6 +749,99 @@ SpatialVector FDCC::ConvertSensorForceToSpatial(SpatialVector Fsensor, SpatialVe
 	return Fret; 
 }
 
+SpatialVector	FDCC::ConvertSpatialBaseToTool		(SpatialVector Fbase, SpatialVector PointPosition)
+{
+	SpatialVector Fret = SpatialVector::Zero();
+
+	// Convert torques and forces given in tool coordinate system to base coordinate system
+	MatrixNd T = MatrixNd::Zero(6, 6);
+	Matrix3d Rx = MatrixNd::Zero(3, 3);
+	Matrix3d temp = MatrixNd::Zero(3, 3);
+
+	// fill E matrix
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+		{
+			T(i, j) = this->E(i, j);
+			T(i+3, j+3) = this->E(i, j);
+		}
+
+	// Calculate -ERx
+	Rx(0, 0) = 	0;
+	Rx(0, 1) = -this->X(5);
+	Rx(0, 2) = 	this->X(4);
+	Rx(1, 0) = 	this->X(5);
+	Rx(1, 1) = 	0;
+	Rx(1, 2) = -this->X(3);
+	Rx(2, 0) = -this->X(4);
+	Rx(2, 1) = 	this->X(3);
+	Rx(2, 2) = 	0;
+
+	temp = -this->E*Rx;
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+		{
+			T(i+3, j) = Rx(i, j);		
+		}
+
+	// Spatial transform 
+	Fret = T*Fbase;
+
+	//std::cout << "Fbase: " << Fbase.transpose() << endl;
+/*
+	Fret(0) +=  -( Fret(4)*PointPosition(5) - Fret(5)*PointPosition(4));
+	Fret(1) +=  -(-Fret(3)*PointPosition(5) + Fret(5)*PointPosition(3));
+	Fret(2) +=  -( Fret(3)*PointPosition(4) - Fret(4)*PointPosition(3));
+*/
+	return Fret;
+}
+
+SpatialVector	FDCC::ConvertSpatialToolToBase		(SpatialVector Ftool, SpatialVector PointPosition)
+{
+	SpatialVector Fret = SpatialVector::Zero();
+
+	// Convert torques and forces given in tool coordinate system to base coordinate system
+	MatrixNd T = MatrixNd::Zero(6, 6);
+	Matrix3d Rx = MatrixNd::Zero(3, 3);
+	Matrix3d temp = MatrixNd::Zero(3, 3);
+
+	// fill E matrix
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+		{
+			T(i, j) = this->E(i, j);
+			T(i+3, j+3) = this->E(i, j);
+		}
+
+	// Calculate -ERx
+	Rx(0, 0) = 	0;
+	Rx(0, 1) = -this->X(5);
+	Rx(0, 2) = 	this->X(4);
+	Rx(1, 0) = 	this->X(5);
+	Rx(1, 1) = 	0;
+	Rx(1, 2) = -this->X(3);
+	Rx(2, 0) = -this->X(4);
+	Rx(2, 1) = 	this->X(3);
+	Rx(2, 2) = 	0;
+
+	temp = -this->E*Rx;
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+		{
+			T(i+3, j) = Rx(i, j);		
+		}
+
+	// Spatial transform 
+	Fret = T.inverse()*Ftool;
+
+	//std::cout << "Fbase: " << Fbase.transpose() << endl;
+
+	Fret(0) +=  -( Fret(4)*PointPosition(5) - Fret(5)*PointPosition(4));
+	Fret(1) +=  -(-Fret(3)*PointPosition(5) + Fret(5)*PointPosition(3));
+	Fret(2) +=  -( Fret(3)*PointPosition(4) - Fret(4)*PointPosition(3));
+
+	return Fret;
+}
 
 
 void FDCC::XDesiredCallback(const geometry_msgs::Pose &msg)
@@ -697,10 +926,11 @@ void FDCC::DesiredForceCallback 	(const fdcc::FDCCForceCommandMsg &msg)
 	return;
 }
 
-SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired)
+SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_desired)
 {
 	SpatialVector F = SpatialVector::Zero(this->model->dof_count);
 	SpatialVector DeltaX = SpatialVector::Zero(this->model->dof_count);
+
 
 
 	// Rotate to fit approach x-vector
@@ -726,19 +956,75 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired)
 
 	F = this->Imp_c*DeltaX - this->Imp_k*this->XDot - this->Imp_I*this->XDDot;
 
+/*
+	// substract collinear part
+	this->Fsp(0) 	= F(3);
+	this->Fsp(1) 	= F(4);
+	this->Fsp(2) 	= F(5);
+	this->Fd(0)		= F_desired(3);
+	this->Fd(1)		= F_desired(4);
+	this->Fd(2)		= F_desired(5);	
+
+	this->Msp(0) 	= F(0);
+	this->Msp(1) 	= F(1);
+	this->Msp(2) 	= F(2);
+	this->Md(0)		= F_desired(0);
+	this->Md(1)		= F_desired(1);
+	this->Md(2)		= F_desired(2);
+
+	if (Fd.norm() != 0)
+		Fcollinear = ((Fsp(0)*Fd(0) + Fsp(1)*Fd(1) + Fsp(2)*Fd(2))/Fd.norm())*(Fd/Fd.norm());
+	if (Md.norm() != 0)
+		Fcollinear = ((Msp(0)*Md(0) + Msp(1)*Md(1) + Msp(2)*Md(2))/Md.norm())*(Md/Md.norm());
+
+	if (Fd.norm() != 0)
+		std::cout << "Fcollinear: " << ((Fsp(0)*Fd(0) + Fsp(1)*Fd(1) + Fsp(2)*Fd(2))/Fd.norm()) << endl;
+	if (Md.norm() != 0)
+		std::cout << "Mcollinear: " << ((Msp(0)*Md(0) + Msp(1)*Md(1) + Msp(2)*Md(2))/Md.norm()) << endl;
+
+	F(0) = F(0) - Mcollinear(0);
+	F(1) = F(1) - Mcollinear(1);
+	F(2) = F(2) - Mcollinear(2);
+	F(3) = F(3) - Fcollinear(0);
+	F(4) = F(4) - Fcollinear(1);
+	F(5) = F(5) - Fcollinear(2);
+*/
+
+	//F = this->ConvertSpatialBaseToTool(F, this->X);
+
+	// Check limits
+	if (F(0) > this->Imp_limit_t1_max)	
+		F(0) = this->Imp_limit_t1_max;
+	else if (F(0) < this->Imp_limit_t1_min)
+		F(0) = this->Imp_limit_t1_min;
+
+	if (F(1) > this->Imp_limit_t2_max)	
+		F(1) = this->Imp_limit_t2_max;
+	else if (F(1) < this->Imp_limit_t2_min)
+		F(1) = this->Imp_limit_t2_min;
 	
+	if (F(2) > this->Imp_limit_t3_max)	
+		F(2) = this->Imp_limit_t3_max;
+	else if (F(2) < this->Imp_limit_t3_min)
+		F(2) = this->Imp_limit_t3_min;
 
-	//std::cout << " XDesired: " << X_desired.transpose() << endl;
+	if (F(3) > this->Imp_limit_f1_max)	
+		F(3) = this->Imp_limit_f1_max;
+	else if (F(3) < this->Imp_limit_f1_min)
+		F(3) = this->Imp_limit_f1_min;
 
-	// Spatial transform addon translation
-	//F(0) +=  -( F(4)*this->X(5) - F(5)*this->X(4));
-	//F(1) +=  -(-F(3)*this->X(5) + F(5)*this->X(3));
-	//F(2) +=  -( F(3)*this->X(4) - F(4)*this->X(3));
+	if (F(4) > this->Imp_limit_f2_max)	
+		F(4) = this->Imp_limit_f2_max;
+	else if (F(4) < this->Imp_limit_f2_min)
+		F(4) = this->Imp_limit_f2_min;
 
-	// Convert Force in base coordinate system to Spatial Force
+	if (F(5) > this->Imp_limit_f3_max)	
+		F(5) = this->Imp_limit_f3_max;
+	else if (F(5) < this->Imp_limit_f3_min)
+		F(5) = this->Imp_limit_f3_min;
 
 
-	return this->ConvertImpedanceForceToSpatial(F, this->X);
+	return F;
 }
 
 void FDCC::ControlLoop(void)
@@ -746,11 +1032,19 @@ void FDCC::ControlLoop(void)
 
 	std::cout << "rate: " <<1.0/this->delta_t << endl;
 
-	ros::Rate r(1.0/this->delta_t);
+	ros::Rate r(1.0/(this->delta_t));
 	
 
 	// init temp variables
-	SpatialVector F_imp, F_net, F_ctrl;
+	SpatialVector F_imp_base, F_imp_tool, F_net, F_ctrl_tool, F_ctrl_base, F_desired_tool_temp;
+	geometry_msgs::WrenchStamped F_sensorReading_temp;
+
+	F_imp_base = SpatialVector::Zero(6);
+	F_imp_tool = SpatialVector::Zero(6);
+	F_net = SpatialVector::Zero(6);
+	F_ctrl_base = SpatialVector::Zero(6);
+	F_ctrl_tool = SpatialVector::Zero(6);
+	F_desired_tool_temp = SpatialVector::Zero(6);
 
 	control_msgs::FollowJointTrajectoryActionGoal joint_msg;
 
@@ -767,49 +1061,94 @@ void FDCC::ControlLoop(void)
         if (this->InitJointStatesLoaded)
         {
 	        	// START control loop
+        	// prepare variables
+        	F_sensorReading_temp = this->F_sensorReading;
+  
 			// 1. Forward kinematics
 			this->CalcForwardKinematics(this->Q, this->QDot, this->QDDot);
 
-			// 2. Impedance Control
-			F_imp = this->ImpedanceControl(this->X_desired);
-
+			// 2. Impedance Control - tool frame
+			F_imp_base = this->ImpedanceControl(this->X_desired, this->F_desired_tool);
+			// convert to tool frame
+			F_imp_tool = this->ConvertSpatialBaseToTool(F_imp_base, this->X);
+			//F_imp_tool = this->ImpedanceControl(this->X_desired, F_desired_tool_temp);
 			// 3. Sensor Reading
-			// Prepare Sensor Data
-			this->F_sensor(0) =  (this->F_sensorReading.wrench.torque.z - this->FTSensor_offset_torque[2])*2;
-			this->F_sensor(1) =  (this->F_sensorReading.wrench.torque.y - this->FTSensor_offset_torque[1])*2;
-			this->F_sensor(2) = -(this->F_sensorReading.wrench.torque.x - this->FTSensor_offset_torque[0])*2;		
-			this->F_sensor(3) =  (this->F_sensorReading.wrench.force.z - this->FTSensor_offset_force[2])/10.0;
-			this->F_sensor(4) =  (this->F_sensorReading.wrench.force.y - this->FTSensor_offset_force[1])/10.0;
-			this->F_sensor(5) = -(this->F_sensorReading.wrench.force.x - this->FTSensor_offset_force[0])/10.0;
+			// Prepare Sensor Data - tool frame
+			this->F_sensor(0) =  (F_sensorReading_temp.wrench.torque.z - this->FTSensor_offset_torque[2])*1.0;
+			this->F_sensor(1) =  (F_sensorReading_temp.wrench.torque.y - this->FTSensor_offset_torque[1])*1.0;
+			this->F_sensor(2) = -(F_sensorReading_temp.wrench.torque.x - this->FTSensor_offset_torque[0])*1.0;		
+			this->F_sensor(3) =  (F_sensorReading_temp.wrench.force.z - this->FTSensor_offset_force[2])/10.0;
+			this->F_sensor(4) =  (F_sensorReading_temp.wrench.force.y - this->FTSensor_offset_force[1])/10.0;
+			this->F_sensor(5) = -(F_sensorReading_temp.wrench.force.x - this->FTSensor_offset_force[0])/10.0;
 
-			//std::cout << "F_sensor tool: " << this->F_sensor.transpose() << endl;
 			
-			this->F_sensor = this->ConvertSensorForceToSpatial(this->F_sensor, this->X);
-			this->F_desired_base = this->ConvertSensorForceToSpatial(this->F_desired_tool, this->X);
+			//this->F_sensor = this->ConvertSensorForceToSpatial(this->F_sensor, this->X);
+			//this->F_sensor = this->ConvertSpatialBaseToTool(this->F_sensor, this->X);
 
-			//std::cout << "F_sensor base: " << this->F_sensor.transpose() << endl;
 			
-			// 4. Calculate Fnet
-			F_net = F_imp + this->F_desired_base + this->F_sensor;
+			// 4. Calculate Fnet - tool frame
+			F_net = F_imp_tool + this->F_desired_tool + this->F_sensor;
 			
 
 			// Calculate F_ctrl
-			F_ctrl(0) = (double) (1.0*this->PD_ctrl[0]->compute(F_net(0)));
-			F_ctrl(1) = (double) (1.0*this->PD_ctrl[1]->compute(F_net(1)));
-			F_ctrl(2) = (double) (1.0*this->PD_ctrl[2]->compute(F_net(2)));
-			F_ctrl(3) = (double) (1.0*this->PD_ctrl[3]->compute(F_net(3)));
-			F_ctrl(4) = (double) (1.0*this->PD_ctrl[4]->compute(F_net(4)));
-			F_ctrl(5) = (double) (1.0*this->PD_ctrl[5]->compute(F_net(5)));
+			F_ctrl_tool(0) = (double) (1.0*this->PD_ctrl[0]->compute(F_net(0)));
+			F_ctrl_tool(1) = (double) (1.0*this->PD_ctrl[1]->compute(F_net(1)));
+			F_ctrl_tool(2) = (double) (1.0*this->PD_ctrl[2]->compute(F_net(2)));
+			F_ctrl_tool(3) = (double) (1.0*this->PD_ctrl[3]->compute(F_net(3)));
+			F_ctrl_tool(4) = (double) (1.0*this->PD_ctrl[4]->compute(F_net(4)));
+			F_ctrl_tool(5) = (double) (1.0*this->PD_ctrl[5]->compute(F_net(5)));
 
-			// 5. Forward Dynamics including integration
+			// 5. Forward Dynamics including integration - base frame
 			
-			this->CalcForwardDynamics(F_ctrl);
+			F_ctrl_base = this->ConvertSpatialToolToBase(F_ctrl_tool, this->X);
+			this->CalcForwardDynamics(F_ctrl_base);
+
+			std::cout << "Q: " << this->Q.transpose() << endl;
 
 			// 6. Move robot
 			this->createRobotTrajectoryMsg();
 			//this->CreateJointStatesMsg();
 			this->CreateFDCCStateMsg();
 
+			fdcc::fdcc_forces force_msg;
+
+			force_msg.header.stamp = ros::Time::now();
+			force_msg.impedance_force.push_back(F_imp_tool(0));
+			force_msg.impedance_force.push_back(F_imp_tool(1));
+			force_msg.impedance_force.push_back(F_imp_tool(2));
+			force_msg.impedance_force.push_back(F_imp_tool(3));
+			force_msg.impedance_force.push_back(F_imp_tool(4));
+			force_msg.impedance_force.push_back(F_imp_tool(5));
+
+			force_msg.sensor_force.push_back(this->F_sensor(0));
+			force_msg.sensor_force.push_back(this->F_sensor(1));
+			force_msg.sensor_force.push_back(this->F_sensor(2));
+			force_msg.sensor_force.push_back(this->F_sensor(3));
+			force_msg.sensor_force.push_back(this->F_sensor(4));
+			force_msg.sensor_force.push_back(this->F_sensor(5));
+
+			force_msg.desired_force.push_back(F_desired_tool_temp(0));
+			force_msg.desired_force.push_back(F_desired_tool_temp(1));
+			force_msg.desired_force.push_back(F_desired_tool_temp(2));
+			force_msg.desired_force.push_back(F_desired_tool_temp(3));
+			force_msg.desired_force.push_back(F_desired_tool_temp(4));
+			force_msg.desired_force.push_back(F_desired_tool_temp(5));
+
+			force_msg.net_force.push_back(F_net(0));
+			force_msg.net_force.push_back(F_net(1));
+			force_msg.net_force.push_back(F_net(2));
+			force_msg.net_force.push_back(F_net(3));
+			force_msg.net_force.push_back(F_net(4));
+			force_msg.net_force.push_back(F_net(5));
+
+			force_msg.control_force.push_back(F_ctrl_tool(0));
+			force_msg.control_force.push_back(F_ctrl_tool(1));
+			force_msg.control_force.push_back(F_ctrl_tool(2));
+			force_msg.control_force.push_back(F_ctrl_tool(3));
+			force_msg.control_force.push_back(F_ctrl_tool(4));
+			force_msg.control_force.push_back(F_ctrl_tool(5));
+
+			this->fdcc_force_pub.publish(force_msg);
 			// END of control loop
 
         }
@@ -826,57 +1165,6 @@ void FDCC::ControlLoop(void)
 	//std::cout << "ROS ok exceeded." << endl;
 }
 
-bool FDCC::CheckJointLimits()
-{
-	int qdot_limit = 100;
-	int qddot_limit = 100;
-
-	if (this->Q(0) < this->joint_limit_min[0] || this->Q(0) > this->joint_limit_max[0])
-		return false;	
-	else if (this->Q(1) < this->joint_limit_min[1] || this->Q(1) > this->joint_limit_max[1])
-		return false;
-	else if (this->Q(2) < this->joint_limit_min[2] || this->Q(2) > this->joint_limit_max[2])
-		return false;
-	else if (this->Q(3) < this->joint_limit_min[3] || this->Q(3) > this->joint_limit_max[3])
-		return false;
-	else if (this->Q(4) < this->joint_limit_min[4] || this->Q(4) > this->joint_limit_max[4])
-		return false;
-	else if (this->Q(5) < this->joint_limit_min[5] || this->Q(5) > this->joint_limit_max[5])
-		return false;
-	
-	// check QDot limits
-	if (this->QDot(0) < -qdot_limit || this->QDot(0) > qdot_limit)
-		return false;
-	else if (this->QDot(1) < -qdot_limit || this->QDot(1) > qdot_limit)
-		return false;
-	else if (this->QDot(2) < -qdot_limit || this->QDot(2) > qdot_limit)
-		return false;
-	else if (this->QDot(3) < -qdot_limit || this->QDot(3) > qdot_limit)
-		return false;
-	else if (this->QDot(4) < -qdot_limit || this->QDot(4) > qdot_limit)
-		return false;
-	else if (this->QDot(5) < -qdot_limit || this->QDot(5) > qdot_limit)
-		return false;
-
-	// check QDot limits
-	if (this->QDDot(0) < -qddot_limit || this->QDDot(0) > qddot_limit)
-		return false;
-	else if (this->QDDot(1) < -qddot_limit || this->QDDot(1) > qddot_limit)
-		return false;
-	else if (this->QDDot(2) < -qddot_limit || this->QDDot(2) > qddot_limit)
-		return false;
-	else if (this->QDDot(3) < -qddot_limit || this->QDDot(3) > qddot_limit)
-		return false;
-	else if (this->QDDot(4) < -qddot_limit || this->QDDot(4) > qddot_limit)
-		return false;
-	else if (this->QDDot(5) < -qddot_limit || this->QDDot(5) > qddot_limit)
-		return false;
-
-
-	return true;
-
-}
-
 void FDCC::SetDeltaT (double delta_t)
 {
 	this->delta_t = delta_t;
@@ -891,16 +1179,59 @@ double FDCC::GetDeltaT (void)
 void FDCC::createRobotTrajectoryMsg( void )
 {
 
-	control_msgs::FollowJointTrajectoryActionGoal return_value;
+	control_msgs::FollowJointTrajectoryActionGoal return_value_gazebo;
 	
 
-	return_value.goal.trajectory.joint_names.push_back("joint_a1");
-	return_value.goal.trajectory.joint_names.push_back("joint_a2");
-	return_value.goal.trajectory.joint_names.push_back("joint_a3");
-	return_value.goal.trajectory.joint_names.push_back("joint_a4");
-	return_value.goal.trajectory.joint_names.push_back("joint_a5");
-	return_value.goal.trajectory.joint_names.push_back("joint_a6");
+	return_value_gazebo.goal.trajectory.joint_names.push_back("joint_a1");
+	return_value_gazebo.goal.trajectory.joint_names.push_back("joint_a2");
+	return_value_gazebo.goal.trajectory.joint_names.push_back("joint_a3");
+	return_value_gazebo.goal.trajectory.joint_names.push_back("joint_a4");
+	return_value_gazebo.goal.trajectory.joint_names.push_back("joint_a5");
+	return_value_gazebo.goal.trajectory.joint_names.push_back("joint_a6");
 
+
+	trajectory_msgs::JointTrajectoryPoint point_current_gazebo;
+
+	point_current_gazebo.positions.push_back(this->Q(0));
+	point_current_gazebo.positions.push_back(this->Q(1));
+	point_current_gazebo.positions.push_back(this->Q(2));
+	point_current_gazebo.positions.push_back(this->Q(3));
+	point_current_gazebo.positions.push_back(this->Q(4));
+	point_current_gazebo.positions.push_back(this->Q(5));
+
+	point_current_gazebo.velocities.push_back(0);
+	point_current_gazebo.velocities.push_back(0);
+	point_current_gazebo.velocities.push_back(0);
+	point_current_gazebo.velocities.push_back(0);
+	point_current_gazebo.velocities.push_back(0);
+	point_current_gazebo.velocities.push_back(0);
+
+	point_current_gazebo.accelerations.push_back(0);
+	point_current_gazebo.accelerations.push_back(0);
+	point_current_gazebo.accelerations.push_back(0);
+	point_current_gazebo.accelerations.push_back(0);
+	point_current_gazebo.accelerations.push_back(0);
+	point_current_gazebo.accelerations.push_back(0);
+
+	point_current_gazebo.time_from_start = ros::Duration(0.00000001); // zasto nije nula?
+
+	return_value_gazebo.goal.trajectory.points.push_back(point_current_gazebo);
+
+	return_value_gazebo.goal.goal_time_tolerance = ros::Duration(0.02);
+
+	this->kuka_kr10_joints_pub.publish(return_value_gazebo);
+	//return return_value;	
+
+
+	trajectory_msgs::JointTrajectory return_value;
+	
+
+	return_value.joint_names.push_back("joint_a1");
+	return_value.joint_names.push_back("joint_a2");
+	return_value.joint_names.push_back("joint_a3");
+	return_value.joint_names.push_back("joint_a4");
+	return_value.joint_names.push_back("joint_a5");
+	return_value.joint_names.push_back("joint_a6");
 
 	trajectory_msgs::JointTrajectoryPoint point_current;
 
@@ -911,43 +1242,12 @@ void FDCC::createRobotTrajectoryMsg( void )
 	point_current.positions.push_back(this->Q(4));
 	point_current.positions.push_back(this->Q(5));
 
-	point_current.velocities.push_back(this->QDot(0));
-	point_current.velocities.push_back(this->QDot(1));
-	point_current.velocities.push_back(this->QDot(2));
-	point_current.velocities.push_back(this->QDot(3));
-	point_current.velocities.push_back(this->QDot(4));
-	point_current.velocities.push_back(this->QDot(5));
+	point_current.time_from_start = ros::Duration(0.02); 
 
-	point_current.accelerations.push_back(this->QDDot(0));
-	point_current.accelerations.push_back(this->QDDot(1));
-	point_current.accelerations.push_back(this->QDDot(2));
-	point_current.accelerations.push_back(this->QDDot(3));
-	point_current.accelerations.push_back(this->QDDot(4));
-	point_current.accelerations.push_back(this->QDDot(5));
-/*
-	point_current.velocities.push_back(0);
-	point_current.velocities.push_back(0);
-	point_current.velocities.push_back(0);
-	point_current.velocities.push_back(0);
-	point_current.velocities.push_back(0);
-	point_current.velocities.push_back(0);
+	return_value.points.push_back(point_current);
 
-	point_current.accelerations.push_back(0);
-	point_current.accelerations.push_back(0);
-	point_current.accelerations.push_back(0);
-	point_current.accelerations.push_back(0);
-	point_current.accelerations.push_back(0);
-	point_current.accelerations.push_back(0);
-*/
-	point_current.time_from_start = ros::Duration(0.0001); // zasto nije nula?
+	this->kuka_kr10_joint_trajectory_pub.publish(return_value);
 
-	return_value.goal.trajectory.points.push_back(point_current);
-
-	return_value.goal.goal_time_tolerance = ros::Duration(0.01);
-
-	this->kuka_kr10_joints_pub.publish(return_value);
-	//return return_value;	
-	
 };
 
 void FDCC::CreateFDCCStateMsg(void)
@@ -976,6 +1276,13 @@ void FDCC::CreateFDCCStateMsg(void)
 	msg2pub.joint_velocity.push_back(this->QDot(4));
 	msg2pub.joint_velocity.push_back(this->QDot(5));
 
+	msg2pub.joint_acceleration.push_back(this->QDDot(0));
+	msg2pub.joint_acceleration.push_back(this->QDDot(1));
+	msg2pub.joint_acceleration.push_back(this->QDDot(2));
+	msg2pub.joint_acceleration.push_back(this->QDDot(3));
+	msg2pub.joint_acceleration.push_back(this->QDDot(4));
+	msg2pub.joint_acceleration.push_back(this->QDDot(5));
+
 	// make quaternion and publish it in cartesian_position
 	double qw, qx, qy, qz;
 
@@ -991,6 +1298,7 @@ void FDCC::CreateFDCCStateMsg(void)
 	msg2pub.cartesian_position.push_back(qy);
 	msg2pub.cartesian_position.push_back(qz);
 	msg2pub.cartesian_position.push_back(qw);
+	
 
 
 	this->fdcc_state_pub.publish(msg2pub);

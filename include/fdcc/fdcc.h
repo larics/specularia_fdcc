@@ -22,6 +22,7 @@ Author: Bruno Maric
 #include "control_msgs/FollowJointTrajectoryActionGoal.h"
 #include "control_msgs/FollowJointTrajectoryActionFeedback.h"
 #include "control_msgs/FollowJointTrajectoryActionResult.h"
+#include "trajectory_msgs/JointTrajectory.h"
 
 #include "geometry_msgs/Pose.h"
 #include "geometry_msgs/PoseStamped.h"
@@ -30,6 +31,7 @@ Author: Bruno Maric
 #include <tf/transform_broadcaster.h>
 
 #include <fdcc/fdcc_state.h>
+#include <fdcc/fdcc_forces.h>
 #include <fdcc/FDCCForceCommandMsg.h>
 
 using namespace RigidBodyDynamics;
@@ -45,23 +47,23 @@ class FDCC{
 		void 			loadImpedanceParams		(void);
 		void 			loadPDParams 			(void);
 		void 			loadFTSensorParams		(void);
+		void 			loadRobotConstraints	(void);
 		void 			CalcForwardDynamics		(SpatialVector Fc);
 		void 			CalcForwardKinematics	(VectorNd Q, VectorNd QDot, VectorNd QDDot);
 
 		SpatialVector	ConvertImpedanceForceToSpatial	(SpatialVector Fbase, SpatialVector PointPosition);
 		SpatialVector	ConvertSensorForceToSpatial		(SpatialVector Fsensor, SpatialVector PointPosition);
 
+		SpatialVector	ConvertSpatialBaseToTool		(SpatialVector Fbase, SpatialVector PointPosition);
+		SpatialVector	ConvertSpatialToolToBase		(SpatialVector Ftool, SpatialVector PointPosition);
+
 		void 			XDesiredCallback		(const geometry_msgs::Pose &msg);
 		void 			ForceSensorCallback		(const geometry_msgs::WrenchStamped &msg);
 		void 			JointStateCallback 		(const sensor_msgs::JointState &msg);
 		void 			DesiredForceCallback 	(const fdcc::FDCCForceCommandMsg &msg);
 
-		SpatialVector 	ImpedanceControl 		(SpatialVector X_desired);
+		SpatialVector 	ImpedanceControl 		(SpatialVector X_desired, SpatialVector F_desired);
 		void 			ControlLoop				(void);
-
-		bool 			CheckJointLimits		();
-
-
 
 		void 		SetDeltaT (double delta_t);
 		double 		GetDeltaT (void);
@@ -79,8 +81,10 @@ class FDCC{
 
 		// Publishers
 		ros::Publisher kuka_kr10_joints_pub;
+		ros::Publisher kuka_kr10_joint_trajectory_pub;
 		ros::Publisher kuka_kr10_joint_state_emulator_pub;
 		ros::Publisher fdcc_state_pub;
+		ros::Publisher fdcc_force_pub;
 
 		// Subscribers
 		ros::Subscriber XDesiredSub;
@@ -112,6 +116,15 @@ class FDCC{
 		SpatialVector 	F_desired_tool;
 		SpatialVector	F_desired_base;
 
+		// Collinear forces and torques
+		SpatialVector Fsp;
+		SpatialVector Fd;
+		SpatialVector Fcollinear;
+
+		SpatialVector Msp;
+		SpatialVector Md;
+		SpatialVector Mcollinear;
+
 		// Joint forces
 		VectorNd Tau;
 
@@ -127,10 +140,23 @@ class FDCC{
 		MatrixNd 	Imp_c;
 		MatrixNd	Imp_k;
 		MatrixNd	Imp_I;
+		double 		Imp_limit_t1_min, Imp_limit_t1_max;
+		double 		Imp_limit_t2_min, Imp_limit_t2_max;
+		double 		Imp_limit_t3_min, Imp_limit_t3_max;
+		double 		Imp_limit_f1_min, Imp_limit_f1_max;
+		double 		Imp_limit_f2_min, Imp_limit_f2_max;
+		double 		Imp_limit_f3_min, Imp_limit_f3_max;
+
 
 		// Force PD Params
-		double ForcePD_Kp[6];
-		double ForcePD_Kd[6];
+		double 		ForcePD_Kp[6];
+		double 		ForcePD_Kd[6];
+		double 		PD_limit_t1_min, PD_limit_t1_max;
+		double 		PD_limit_t2_min, PD_limit_t2_max;
+		double 		PD_limit_t3_min, PD_limit_t3_max;
+		double 		PD_limit_f1_min, PD_limit_f1_max;
+		double 		PD_limit_f2_min, PD_limit_f2_max;
+		double 		PD_limit_f3_min, PD_limit_f3_max;
 
 		// Integration time constant
 		double	delta_t;	
@@ -144,8 +170,10 @@ class FDCC{
 		ConstraintSet CS;	
 
 		// joint limits
-		double joint_limit_min[6];
-		double joint_limit_max[6];
+		double joint_limit_position_min[6];
+		double joint_limit_position_max[6];
+		double joint_limit_velocity[6];
+		double joint_limit_acceleration[6];
 
 		double joint_velocity_limit_min[6];
 		double joint_velocity_limit_max[6];

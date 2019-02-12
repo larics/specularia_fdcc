@@ -349,7 +349,7 @@ if __name__=="__main__":
     # publisher of pose
     posePub = rospy.Publisher('/pose_desired', Pose, queue_size = 1);
 
-    jointStateSub = rospy.Subscriber('/fdcc_state', fdcc_state, jointStateCallback)
+    jointStateSub = rospy.Subscriber('/fdcc/state', fdcc_state, jointStateCallback)
 
 
     
