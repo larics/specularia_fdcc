@@ -28,7 +28,7 @@ class loadPath():
 
 	def loadFromFile(self):
 		
-		with open('/home/bmaric/kuka_ws/src/FDCC/scripts/DOORS_trajektorije.txt') as inputfile:
+		with open('/home/bmaric/kuka_ws/src/FDCC/scripts/trajektorije.txt') as inputfile:
 			for row in csv.reader(inputfile, delimiter=' '):
 				self.results.append(row)
 

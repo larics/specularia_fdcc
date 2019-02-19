@@ -62,7 +62,7 @@ class FDCC{
 		void 			JointStateCallback 		(const sensor_msgs::JointState &msg);
 		void 			DesiredForceCallback 	(const fdcc::FDCCForceCommandMsg &msg);
 
-		SpatialVector 	ImpedanceControl 		(SpatialVector X_desired, SpatialVector F_desired);
+		SpatialVector 	ImpedanceControl 		    (SpatialVector X_desired, SpatialVector F_desired);
 		void 			ControlLoop				(void);
 
 		void 		SetDeltaT (double delta_t);

@@ -1,4 +1,4 @@
 FTSensorConfiguration:
   Zero_readings:
-    Forces: [2.77, 2.96, -48.55]
-    Torques: [-0.2494, 0.57775, 0.0447]
+    Forces: [0.737255483106, 0.740662735187, -46.7125]
+    Torques: [-2.12625, 4.5125, 0.55625]

@@ -1,29 +1,29 @@
 ForcePDConfig:
   dt: 0.01
   Kp:
-    spatial0: 1.2
-    spatial1: 1.2
-    spatial2: 1.2
-    spatial3: 1.0
-    spatial4: 1.0
-    spatial5: 1.0
+    spatial0: 0.2
+    spatial1: 0.2
+    spatial2: 0.2
+    spatial3: 0.001
+    spatial4: 0.001
+    spatial5: 0.001
   Kd:
-    spatial0: 0.15
-    spatial1: 0.15
-    spatial2: 0.15
-    spatial3: 0.15
-    spatial4: 0.15
-    spatial5: 0.15
+    spatial0: 0.07
+    spatial1: 0.07
+    spatial2: 0.07
+    spatial3: 0.005
+    spatial4: 0.005
+    spatial5: 0.005
   limits:
-    limit_t1_min: -100
-    limit_t1_max: 100
-    limit_t2_min: -100
-    limit_t2_max: 100
-    limit_t3_min: -100
-    limit_t3_max: 100
-    limit_f1_min: -100
-    limit_f1_max: 100
-    limit_f2_min: -100
-    limit_f2_max: 100
-    limit_f3_min: -100
-    limit_f3_max: 100
+    limit_t1_min: -3
+    limit_t1_max: 3
+    limit_t2_min: -3
+    limit_t2_max: 3
+    limit_t3_min: -3
+    limit_t3_max: 3
+    limit_f1_min: -1000
+    limit_f1_max: 1000
+    limit_f2_min: -1000
+    limit_f2_max: 1000
+    limit_f3_min: -1000
+    limit_f3_max: 1000

@@ -58,9 +58,9 @@ class ENDORSE_parser():
                 
                 onePose = PoseStamped()
                 
-                onePose.pose.position.x = float(elements[0])
+                onePose.pose.position.x = float(elements[0])+0.1
                 onePose.pose.position.y = float(elements[1])
-                onePose.pose.position.z = float(elements[2]) + 0.25
+                onePose.pose.position.z = float(elements[2]) + 0.02
                 # PROMIJENITI U FORMU X, Y, Z, W
                 onePose.pose.orientation.w = float(elements[3])
                 onePose.pose.orientation.x = float(elements[4])
@@ -90,18 +90,21 @@ class ENDORSE_parser():
 
     def executeScanPath(self):
 
+        #self.dig_outputs_srv(False, False, False, False, False, False, False, False)
+        #rospy.sleep(1)
 
         for i in range(len(self.waypoints)):
             #print self.waypoints[i]
 
-            if i in self.stopPoints:
+            #if i in self.stopPoints:
+            if (i % 5 == 0):
                 # trigger laser
 
                 # wait for robot to stop
-                rospy.sleep(2)
+                #rospy.sleep(0.05)
 
                 # trigger laser on
-                #self.dig_outputs_srv(True, True, True, False, False, False, False, False)
+                self.dig_outputs_srv(True, True, True, False, False, False, False, False)
                 print "Trigger ON: " + str(i)
                 
 
@@ -119,10 +122,10 @@ class ENDORSE_parser():
                 #print "MOVE ROBOT"
                 self.pathPub.publish(self.waypoints[i])
                 self.desiredXPub.publish(self.waypoints[i].pose)
-                rospy.sleep(0.2)
+                rospy.sleep(0.03)
 
                 # turn trigger off
-                #self.dig_outputs_srv(True, True, False, False, False, False, False, False)
+                self.dig_outputs_srv(True, True, False, False, False, False, False, False)
                 #print "Trigger OFF"
         
         print self.triggerPoses        
@@ -131,7 +134,7 @@ class ENDORSE_parser():
         
 
          #read tool path from file
-        file = open('/home/bmaric/kuka_ws/src/FDCC/scripts/trajektorijeNADA2.txt', "r")
+        file = open('/home/bmaric/kuka_ws/src/FDCC/scripts/trajektorijeScanner.txt', "r")
         request = PoseMsgSimpleSrvRequest();
         request.toolPose=file.read()
 

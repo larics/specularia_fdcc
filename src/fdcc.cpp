@@ -88,37 +88,13 @@ void FDCC::loadURDF(const char * filename)
 	this->Q0 		= VectorNd::Zero (this->model->dof_count);
 	this->QDot0 	= VectorNd::Zero (this->model->dof_count);
 	this->QDDot0 	= VectorNd::Zero (this->model->dof_count);
-	
-	//this->Q(1) = -1.57;
-	//this->Q(2) = 1.57;
-	//this->Q(4) = 1.57;
-	//this->Q(4) = 0.5;
-	
+
 	this->X 		= SpatialVector::Zero(6);
 	this->XDot 		= SpatialVector::Zero(6);
 	this->XDDot 	= SpatialVector::Zero(6);
 
 	this->X_desired = SpatialVector::Zero(6);
 	this->E_desired = Matrix3d::Zero();
-	this->E_desired(0, 0) = 1;
-	this->E_desired(1, 1) = 1;
-	this->E_desired(2, 2) = 1;
-
-	/*
-	this->X 		= SpatialVector (1.0, 0., 0.0, 0.62, 0., 0.995);
-	this->XDot 		= SpatialVector (0., 0., 0., 0., 0., 0.);
-	this->XDDot 	= SpatialVector (0., 0., 0., 0., 0., 0.);
-	this->X0 		= SpatialVector (1.0, 0., 0.0, 0.62, 0., 0.995);
-	this->XDot0 	= SpatialVector (0., 0., 0., 0., 0., 0.);
-	this->XDDot0 	= SpatialVector (0., 0., 0., 0., 0., 0.);
-
-	this->X_desired	= SpatialVector (1.0, 0., 0.0, 0.62, 0., 0.995);
-	this->E_desired = Matrix3d::Zero();
-	this->E_desired(0, 0) = 1;
-	this->E_desired(1, 1) = 1;
-	this->E_desired(2, 2) = 1;
-	*/
-
 
     this->Imp_c		= MatrixNd::Zero(this->model->dof_count, this->model->dof_count);
     this->Imp_k		= MatrixNd::Zero(this->model->dof_count, this->model->dof_count);
@@ -901,6 +877,7 @@ void FDCC::JointStateCallback (const sensor_msgs::JointState &msg)
 
 		// Set init X_desired = X
 		this->X_desired = this->X;
+		this->E_desired = this->E;
 
 		ROS_INFO("Init Joint States Loaded!");
 		// set flag to true
@@ -931,7 +908,11 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_d
 	SpatialVector F = SpatialVector::Zero(this->model->dof_count);
 	SpatialVector DeltaX = SpatialVector::Zero(this->model->dof_count);
 
+	// START TOOL FRAME TRANSFORM
 
+
+
+	// END TOOL FRAME TRANSFORM
 
 	// Rotate to fit approach x-vector
 	DeltaX = X_desired - this->X;
@@ -954,44 +935,64 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_d
 	DeltaX(1) += X_desired(1)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
 	DeltaX(2) += X_desired(2)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
 
-	F = this->Imp_c*DeltaX - this->Imp_k*this->XDot - this->Imp_I*this->XDDot;
-
-/*
-	// substract collinear part
-	this->Fsp(0) 	= F(3);
-	this->Fsp(1) 	= F(4);
-	this->Fsp(2) 	= F(5);
-	this->Fd(0)		= F_desired(3);
-	this->Fd(1)		= F_desired(4);
-	this->Fd(2)		= F_desired(5);	
+	F = this->Imp_c*DeltaX;
 
 	this->Msp(0) 	= F(0);
 	this->Msp(1) 	= F(1);
 	this->Msp(2) 	= F(2);
+	this->Fsp(0) 	= F(3);
+	this->Fsp(1) 	= F(4);
+	this->Fsp(2) 	= F(5);
+
+
+	F = F - this->Imp_k*this->XDot - this->Imp_I*this->XDDot;
+
+	//std::cout << "F: " << F.transpose() << endl;
+	F_desired = this->ConvertSpatialToolToBase(F_desired, this->X);
+	
+
+	
+	// substract collinear part
 	this->Md(0)		= F_desired(0);
 	this->Md(1)		= F_desired(1);
-	this->Md(2)		= F_desired(2);
+	this->Md(2)		= F_desired(2);	
+	this->Fd(0)		= F_desired(3);
+	this->Fd(1)		= F_desired(4);
+	this->Fd(2)		= F_desired(5);	
 
-	if (Fd.norm() != 0)
-		Fcollinear = ((Fsp(0)*Fd(0) + Fsp(1)*Fd(1) + Fsp(2)*Fd(2))/Fd.norm())*(Fd/Fd.norm());
-	if (Md.norm() != 0)
-		Fcollinear = ((Msp(0)*Md(0) + Msp(1)*Md(1) + Msp(2)*Md(2))/Md.norm())*(Md/Md.norm());
+	
+	
+	if (this->Fd.norm() != 0)
+		this->Fcollinear = ((this->Fsp(0)*this->Fd(0) + this->Fsp(1)*this->Fd(1) + this->Fsp(2)*this->Fd(2))/this->Fd.norm())*(this->Fd/this->Fd.norm());
+	else
+	{
+		this->Fcollinear(0) = 0;
+		this->Fcollinear(1) = 0;
+		this->Fcollinear(2) = 0;
+	}
 
-	if (Fd.norm() != 0)
-		std::cout << "Fcollinear: " << ((Fsp(0)*Fd(0) + Fsp(1)*Fd(1) + Fsp(2)*Fd(2))/Fd.norm()) << endl;
-	if (Md.norm() != 0)
-		std::cout << "Mcollinear: " << ((Msp(0)*Md(0) + Msp(1)*Md(1) + Msp(2)*Md(2))/Md.norm()) << endl;
+	if (this->Md.norm() != 0)
+		this->Mcollinear = ((this->Msp(0)*this->Md(0) + this->Msp(1)*this->Md(1) + this->Msp(2)*this->Md(2))/this->Md.norm())*(this->Md/this->Md.norm());
+	else
+	{
+		this->Mcollinear(0) = 0;
+		this->Mcollinear(1) = 0;
+		this->Mcollinear(2) = 0;
+	}
 
-	F(0) = F(0) - Mcollinear(0);
-	F(1) = F(1) - Mcollinear(1);
-	F(2) = F(2) - Mcollinear(2);
-	F(3) = F(3) - Fcollinear(0);
-	F(4) = F(4) - Fcollinear(1);
-	F(5) = F(5) - Fcollinear(2);
-*/
+	if (this->Fd.norm() != 0)
+		std::cout << "Fcollinear: " << ((this->Fsp(0)*this->Fd(0) + this->Fsp(1)*this->Fd(1) + this->Fsp(2)*this->Fd(2))/this->Fd.norm())*(this->Fd/this->Fd.norm()).transpose()  << endl;
+	if (this->Md.norm() != 0)
+		std::cout << "Mcollinear: " << ((this->Msp(0)*this->Md(0) + this->Msp(1)*this->Md(1) + this->Msp(2)*this->Md(2))/this->Md.norm())*(this->Md/this->Md.norm()).transpose() << endl;
 
-	//F = this->ConvertSpatialBaseToTool(F, this->X);
-
+	F(0) = F(0) - this->Mcollinear(0);
+	F(1) = F(1) - this->Mcollinear(1);
+	F(2) = F(2) - this->Mcollinear(2);
+	F(3) = F(3) - this->Fcollinear(0);
+	F(4) = F(4) - this->Fcollinear(1);
+	F(5) = F(5) - this->Fcollinear(2);
+	
+	
 	// Check limits
 	if (F(0) > this->Imp_limit_t1_max)	
 		F(0) = this->Imp_limit_t1_max;
@@ -1026,6 +1027,7 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_d
 
 	return F;
 }
+
 
 void FDCC::ControlLoop(void)
 {
@@ -1074,12 +1076,12 @@ void FDCC::ControlLoop(void)
 			//F_imp_tool = this->ImpedanceControl(this->X_desired, F_desired_tool_temp);
 			// 3. Sensor Reading
 			// Prepare Sensor Data - tool frame
-			this->F_sensor(0) =  (F_sensorReading_temp.wrench.torque.z - this->FTSensor_offset_torque[2])*1.0;
-			this->F_sensor(1) =  (F_sensorReading_temp.wrench.torque.y - this->FTSensor_offset_torque[1])*1.0;
-			this->F_sensor(2) = -(F_sensorReading_temp.wrench.torque.x - this->FTSensor_offset_torque[0])*1.0;		
-			this->F_sensor(3) =  (F_sensorReading_temp.wrench.force.z - this->FTSensor_offset_force[2])/10.0;
-			this->F_sensor(4) =  (F_sensorReading_temp.wrench.force.y - this->FTSensor_offset_force[1])/10.0;
-			this->F_sensor(5) = -(F_sensorReading_temp.wrench.force.x - this->FTSensor_offset_force[0])/10.0;
+			this->F_sensor(0) =  (F_sensorReading_temp.wrench.torque.z - this->FTSensor_offset_torque[2])/1.0;
+			this->F_sensor(1) =  (F_sensorReading_temp.wrench.torque.y - this->FTSensor_offset_torque[1])/1.0;
+			this->F_sensor(2) = -(F_sensorReading_temp.wrench.torque.x - this->FTSensor_offset_torque[0])/1.0;		
+			this->F_sensor(3) =  (F_sensorReading_temp.wrench.force.z - this->FTSensor_offset_force[2]);
+			this->F_sensor(4) =  (F_sensorReading_temp.wrench.force.y - this->FTSensor_offset_force[1]);
+			this->F_sensor(5) = -(F_sensorReading_temp.wrench.force.x - this->FTSensor_offset_force[0]);
 
 			
 			//this->F_sensor = this->ConvertSensorForceToSpatial(this->F_sensor, this->X);
@@ -1087,7 +1089,7 @@ void FDCC::ControlLoop(void)
 
 			
 			// 4. Calculate Fnet - tool frame
-			F_net = F_imp_tool + this->F_desired_tool + this->F_sensor;
+			F_net =  F_imp_tool + this->F_desired_tool + this->F_sensor;
 			
 
 			// Calculate F_ctrl
@@ -1103,7 +1105,7 @@ void FDCC::ControlLoop(void)
 			F_ctrl_base = this->ConvertSpatialToolToBase(F_ctrl_tool, this->X);
 			this->CalcForwardDynamics(F_ctrl_base);
 
-			std::cout << "Q: " << this->Q.transpose() << endl;
+			//std::cout << "Q: " << this->Q.transpose() << endl;
 
 			// 6. Move robot
 			this->createRobotTrajectoryMsg();
@@ -1127,12 +1129,12 @@ void FDCC::ControlLoop(void)
 			force_msg.sensor_force.push_back(this->F_sensor(4));
 			force_msg.sensor_force.push_back(this->F_sensor(5));
 
-			force_msg.desired_force.push_back(F_desired_tool_temp(0));
-			force_msg.desired_force.push_back(F_desired_tool_temp(1));
-			force_msg.desired_force.push_back(F_desired_tool_temp(2));
-			force_msg.desired_force.push_back(F_desired_tool_temp(3));
-			force_msg.desired_force.push_back(F_desired_tool_temp(4));
-			force_msg.desired_force.push_back(F_desired_tool_temp(5));
+			force_msg.desired_force.push_back(this->F_desired_tool(0));
+			force_msg.desired_force.push_back(this->F_desired_tool(1));
+			force_msg.desired_force.push_back(this->F_desired_tool(2));
+			force_msg.desired_force.push_back(this->F_desired_tool(3));
+			force_msg.desired_force.push_back(this->F_desired_tool(4));
+			force_msg.desired_force.push_back(this->F_desired_tool(5));
 
 			force_msg.net_force.push_back(F_net(0));
 			force_msg.net_force.push_back(F_net(1));

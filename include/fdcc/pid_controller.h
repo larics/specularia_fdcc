@@ -142,6 +142,9 @@ protected:
     // minimal control value (lower saturation limit)
     double u_min_;
 
+    // old control value
+    double u_old;
+
     // maximal allowable time step
     double td_max_;
 

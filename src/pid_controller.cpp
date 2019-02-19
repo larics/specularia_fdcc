@@ -5,6 +5,7 @@ PidControllerBase::PidControllerBase()
     ki_(0.0),
     kd_(0.0),
     ui_old_(0.0),
+    u_old(0.0),
     error_old_(0.0),
     u_max_(std::numeric_limits<double>::infinity()),
     u_min_(-std::numeric_limits<double>::infinity()),
@@ -20,6 +21,7 @@ PidControllerBase::PidControllerBase(double kp, double ki, double kd)
     ki_(ki),
     kd_(kd),
     ui_old_(0.0),
+    u_old(0.0),
     error_old_(0.0),
     u_max_(std::numeric_limits<double>::infinity()),
     u_min_(-std::numeric_limits<double>::infinity()),
@@ -137,6 +139,8 @@ double PidControllerBase::compute(double error)
   }
 */
 
+  double N = 170.232;
+
   // proportional term
   up = kp_ * error;
 
@@ -144,10 +148,12 @@ double PidControllerBase::compute(double error)
   ui = ui_old_  + ki_ * error ;
 
   // derivative term
-  ud = kd_ * (error - error_old_);
+  ud = kd_ * (error - error_old_*0.01) / 0.01;
 
   // total = p + i + d
   u = up + ui + ud;
+  //u = ((2*kp_ + kp_*N*0.01 + 2*N*kd_)*error + (kp_*N*0.01 - 2*kp_ - 2*N*kd_)*error_old_ - (N*0.01-2)*u_old)/(2 + N*0.01);
+
 
   // saturation and anti-wind up
   if (u > u_max_)
@@ -163,6 +169,7 @@ double PidControllerBase::compute(double error)
 
   error_old_ = error;
   time_old_ = time_current;
+  u_old = u;
 
   return u;
 
