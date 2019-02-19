@@ -160,9 +160,9 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="20.0"/>
+      <mass value="15.0"/>
       <origin rpy="0 0 0" xyz="0 0 0"/>
-      <inertia ixx="5" ixy="0" ixz="0" iyy="05" iyz="0.0" izz="05"/>
+      <inertia ixx="005" ixy="0" ixz="0" iyy="005" iyz="0.0" izz="005"/>
     </inertial>
   </link>
   <!-- This frame corresponds to the $FLANGE coordinate system in KUKA KRC controllers. -->

@@ -658,9 +658,13 @@ void FDCC::CalcForwardKinematics(VectorNd Q, VectorNd QDot, VectorNd QDDot)
 	this->X(1) = this->E(0, 1);
 	this->X(2) = this->E(0, 2);
 
+	Vector3d temp_pose = Vector3d::Zero();
+	temp_pose(0) = this->X(3);
+	temp_pose(1) = this->X(4);
+	temp_pose(2) = this->X(5);
 
-	this->XDot = CalcPointVelocity6D(*this->model, this->Q, this->QDot, 6, base_position, false);
-	this->XDDot = CalcPointAcceleration6D(*this->model, this->Q, this->QDot, this->QDDot, 6, base_position, false);
+	this->XDot = CalcPointVelocity6D(*this->model, this->Q, this->QDot, 6, temp, false);
+	this->XDDot = CalcPointAcceleration6D(*this->model, this->Q, this->QDot, this->QDDot, 6, temp, false);
 
 	//std::cout << "X: " << this->X.transpose() << endl;
 	//std::cout << "XDot: " << this->XDot.transpose() << endl;
@@ -819,6 +823,49 @@ SpatialVector	FDCC::ConvertSpatialToolToBase		(SpatialVector Ftool, SpatialVecto
 	return Fret;
 }
 
+SpatialVector	FDCC::ConvertSpatialMotionBaseToTool	(SpatialVector M, SpatialVector PointPosition)
+{
+
+	SpatialVector Mret = SpatialVector::Zero();
+
+	// Convert torques and forces given in tool coordinate system to base coordinate system
+	MatrixNd T = MatrixNd::Zero(6, 6);
+	Matrix3d Rx = MatrixNd::Zero(3, 3);
+	Matrix3d temp = MatrixNd::Zero(3, 3);
+
+	// fill E matrix
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+		{
+			T(i, j) = this->E(i, j);
+			T(i+3, j+3) = this->E(i, j);
+		}
+
+	// Calculate -ERx
+	Rx(0, 0) = 	0;
+	Rx(0, 1) = -this->X(5);
+	Rx(0, 2) = 	this->X(4);
+	Rx(1, 0) = 	this->X(5);
+	Rx(1, 1) = 	0;
+	Rx(1, 2) = -this->X(3);
+	Rx(2, 0) = -this->X(4);
+	Rx(2, 1) = 	this->X(3);
+	Rx(2, 2) = 	0;
+
+	temp = -this->E*Rx;
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+		{
+			T(i, j+3) = Rx(i, j);		
+		}
+
+	// Spatial transform 
+	Mret = T*M;
+
+
+	return Mret;
+
+}
 
 void FDCC::XDesiredCallback(const geometry_msgs::Pose &msg)
 {
@@ -909,44 +956,60 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_d
 	SpatialVector DeltaX = SpatialVector::Zero(this->model->dof_count);
 
 	// START TOOL FRAME TRANSFORM
+	Vector3d X_desired_tool = Vector3d::Zero();
+	Vector3d X_temp_tool = Vector3d::Zero();
+	Vector3d temp = Vector3d::Zero();
 
+	temp(0) = X_desired(3);
+	temp(1) = X_desired(4);
+	temp(2) = X_desired(5);
+	X_desired_tool = CalcBaseToBodyCoordinates(*this->model, this->Q, 6, temp, true);
+/*
+	temp(0) = this->X(3);
+	temp(1) = this->X(4);
+	temp(2) = this->X(5);
+	X_temp_tool = CalcBaseToBodyCoordinates(*this->model, this->Q, 6, temp, true);
+*/
+	Matrix3d E_imp_tool = Matrix3d::Zero();
 
+	E_imp_tool = this->E*this->E_desired;
 
 	// END TOOL FRAME TRANSFORM
 
-	// Rotate to fit approach x-vector
-	DeltaX = X_desired - this->X;
-	// Vector product - rotation vector
-	DeltaX(0) = ( this->X(1)*X_desired(2) - this->X(2)*X_desired(1));
-	DeltaX(1) = (-this->X(0)*X_desired(2) + this->X(2)*X_desired(0));
-	DeltaX(2) = ( this->X(0)*X_desired(1) - this->X(1)*X_desired(0));
-	
-	// Scalar product - scale rotation vector
-	DeltaX(0) = DeltaX(0)*(X_desired(0)*this->X(0) + X_desired(1)*this->X(1) + X_desired(2)*this->X(2));
-	DeltaX(1) = DeltaX(1)*(X_desired(0)*this->X(0) + X_desired(1)*this->X(1) + X_desired(2)*this->X(2));
-	DeltaX(2) = DeltaX(2)*(X_desired(0)*this->X(0) + X_desired(1)*this->X(1) + X_desired(2)*this->X(2));
+	// Move tool
+	DeltaX(3) = X_desired_tool(0); // - X_temp_tool(0);
+	DeltaX(4) = X_desired_tool(1); // - X_temp_tool(1);
+	DeltaX(5) = X_desired_tool(2); // - X_temp_tool(2);
 
+	// Rotate tool
+	// Rotate to fit approach x-vector
+	DeltaX(0) = 0;
+	DeltaX(1) = -E_imp_tool(2, 0); 
+	DeltaX(2) = E_imp_tool(1, 0); 
+	
 	// Rotate to fit z vector
 	Matrix3d Erot = this->E_desired.transpose()*this->E.inverse();
 	//std::cout << "Delta X " << DeltaX(0) << ", "<< DeltaX(1) << ", "<< DeltaX(2) <<endl;
 	//std::cout << "Approach vector " << X_desired(0) << ", "<< X_desired(1) << ", "<< X_desired(2) <<endl;
 	//std::cout << "Rot angle " << atan2(Erot(2, 1), Erot(1, 1))/3.14 << endl;
-	DeltaX(0) += X_desired(0)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
-	DeltaX(1) += X_desired(1)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
-	DeltaX(2) += X_desired(2)*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
+	DeltaX(0) += 1*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
+	DeltaX(1) += 0*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
+	DeltaX(2) += 0*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
 
 	F = this->Imp_c*DeltaX;
-
+	std::cout << "DeltaX: " << DeltaX.transpose() << endl;
+	std::cout << "F: " << F.transpose() << endl;
+/*
 	this->Msp(0) 	= F(0);
 	this->Msp(1) 	= F(1);
 	this->Msp(2) 	= F(2);
 	this->Fsp(0) 	= F(3);
 	this->Fsp(1) 	= F(4);
 	this->Fsp(2) 	= F(5);
+*/
 
-
-	F = F - this->Imp_k*this->XDot - this->Imp_I*this->XDDot;
-
+	F = F - this->Imp_k*this->ConvertSpatialMotionBaseToTool(this->XDot, this->X) - this->Imp_I*this->ConvertSpatialMotionBaseToTool(this->XDDot, this->X);
+/*
 	//std::cout << "F: " << F.transpose() << endl;
 	F_desired = this->ConvertSpatialToolToBase(F_desired, this->X);
 	
@@ -992,7 +1055,7 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_d
 	F(4) = F(4) - this->Fcollinear(1);
 	F(5) = F(5) - this->Fcollinear(2);
 	
-	
+*/	
 	// Check limits
 	if (F(0) > this->Imp_limit_t1_max)	
 		F(0) = this->Imp_limit_t1_max;
@@ -1026,6 +1089,7 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_d
 
 
 	return F;
+	//return SpatialVector::Zero(6);
 }
 
 
@@ -1070,9 +1134,10 @@ void FDCC::ControlLoop(void)
 			this->CalcForwardKinematics(this->Q, this->QDot, this->QDDot);
 
 			// 2. Impedance Control - tool frame
-			F_imp_base = this->ImpedanceControl(this->X_desired, this->F_desired_tool);
+			//F_imp_base = this->ImpedanceControl(this->X_desired, this->F_desired_tool);
+			F_imp_tool = this->ImpedanceControl(this->X_desired, this->F_desired_tool);
 			// convert to tool frame
-			F_imp_tool = this->ConvertSpatialBaseToTool(F_imp_base, this->X);
+			//F_imp_tool = this->ConvertSpatialBaseToTool(F_imp_base, this->X);
 			//F_imp_tool = this->ImpedanceControl(this->X_desired, F_desired_tool_temp);
 			// 3. Sensor Reading
 			// Prepare Sensor Data - tool frame

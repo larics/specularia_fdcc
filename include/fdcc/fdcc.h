@@ -56,6 +56,7 @@ class FDCC{
 
 		SpatialVector	ConvertSpatialBaseToTool		(SpatialVector Fbase, SpatialVector PointPosition);
 		SpatialVector	ConvertSpatialToolToBase		(SpatialVector Ftool, SpatialVector PointPosition);
+		SpatialVector	ConvertSpatialMotionBaseToTool	(SpatialVector M, SpatialVector PointPosition);
 
 		void 			XDesiredCallback		(const geometry_msgs::Pose &msg);
 		void 			ForceSensorCallback		(const geometry_msgs::WrenchStamped &msg);
