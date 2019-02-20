@@ -986,8 +986,8 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_d
 	if (sqrt(E_imp_tool(1, 0)*E_imp_tool(1, 0) + E_imp_tool(2, 0)*E_imp_tool(2, 0)) != 0)
 	{
 		DeltaX(0) = 0;
-		DeltaX(1) = -(E_imp_tool(2, 0)/sqrt(E_imp_tool(1, 0)*E_imp_tool(1, 0) + E_imp_tool(2, 0)*E_imp_tool(2, 0)))*E_imp_tool(0, 0); 
-		DeltaX(2) =  (E_imp_tool(1, 0)/sqrt(E_imp_tool(1, 0)*E_imp_tool(1, 0) + E_imp_tool(2, 0)*E_imp_tool(2, 0)))*E_imp_tool(0, 0);
+		DeltaX(1) = -(E_imp_tool(2, 0)/sqrt(E_imp_tool(0, 0)*E_imp_tool(0, 0) + E_imp_tool(1, 0)*E_imp_tool(1, 0) + E_imp_tool(2, 0)*E_imp_tool(2, 0)))*E_imp_tool(0, 0); 
+		DeltaX(2) =  (E_imp_tool(1, 0)/sqrt(E_imp_tool(0, 0)*E_imp_tool(0, 0) + E_imp_tool(1, 0)*E_imp_tool(1, 0) + E_imp_tool(2, 0)*E_imp_tool(2, 0)))*E_imp_tool(0, 0);
 	}
 	
 	
@@ -1002,7 +1002,7 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_d
 
 	F = this->Imp_c*DeltaX;
 	std::cout << "DeltaX: " << DeltaX.transpose() << endl;
-	std::cout << "F: " << F.transpose() << endl;
+	//std::cout << "F: " << F.transpose() << endl;
 /*
 	this->Msp(0) 	= F(0);
 	this->Msp(1) 	= F(1);
