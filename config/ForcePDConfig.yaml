@@ -8,9 +8,9 @@ ForcePDConfig:
     spatial4: 0.001
     spatial5: 0.001
   Kd:
-    spatial0: 0.000
-    spatial1: 0.000
-    spatial2: 0.000
+    spatial0: 0.005
+    spatial1: 0.005
+    spatial2: 0.005
     spatial3: 0.005
     spatial4: 0.005
     spatial5: 0.005
