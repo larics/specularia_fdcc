@@ -924,7 +924,7 @@ void FDCC::JointStateCallback (const sensor_msgs::JointState &msg)
 
 		// Set init X_desired = X
 		this->X_desired = this->X;
-		this->E_desired = this->E;
+		//this->E_desired = this->E;
 
 		ROS_INFO("Init Joint States Loaded!");
 		// set flag to true
@@ -983,9 +983,13 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_d
 
 	// Rotate tool
 	// Rotate to fit approach x-vector
-	DeltaX(0) = 0;
-	DeltaX(1) = -E_imp_tool(2, 0); 
-	DeltaX(2) = E_imp_tool(1, 0); 
+	if (sqrt(E_imp_tool(1, 0)*E_imp_tool(1, 0) + E_imp_tool(2, 0)*E_imp_tool(2, 0)) != 0)
+	{
+		DeltaX(0) = 0;
+		DeltaX(1) = -(E_imp_tool(2, 0)/sqrt(E_imp_tool(1, 0)*E_imp_tool(1, 0) + E_imp_tool(2, 0)*E_imp_tool(2, 0)))*E_imp_tool(0, 0); 
+		DeltaX(2) =  (E_imp_tool(1, 0)/sqrt(E_imp_tool(1, 0)*E_imp_tool(1, 0) + E_imp_tool(2, 0)*E_imp_tool(2, 0)))*E_imp_tool(0, 0);
+	}
+	
 	
 	// Rotate to fit z vector
 	Matrix3d Erot = this->E_desired.transpose()*this->E.inverse();
@@ -993,8 +997,8 @@ SpatialVector FDCC::ImpedanceControl (SpatialVector X_desired, SpatialVector F_d
 	//std::cout << "Approach vector " << X_desired(0) << ", "<< X_desired(1) << ", "<< X_desired(2) <<endl;
 	//std::cout << "Rot angle " << atan2(Erot(2, 1), Erot(1, 1))/3.14 << endl;
 	DeltaX(0) += 1*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
-	DeltaX(1) += 0*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
-	DeltaX(2) += 0*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
+	//DeltaX(1) += 0*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
+	//DeltaX(2) += 0*(-atan2(Erot(2, 1), Erot(1, 1))/3.14);
 
 	F = this->Imp_c*DeltaX;
 	std::cout << "DeltaX: " << DeltaX.transpose() << endl;
